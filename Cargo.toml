@@ -28,3 +28,13 @@ k256 = { version = "0.14.0", features = ["ecdsa"] }
 getrandom = { version = "0.4", features = ["sys_rng"] }
 sha2 = "0.10"
 hex = "0.4"
+
+# Post-quantum schemes. All pure Rust, chosen over the pqcrypto-* PQClean C
+# wrappers because those have no evidence of building inside a zkVM guest and
+# Phase 2 needs the same implementation in-guest as out.
+fips204 = "0.4.6"   # ML-DSA (FIPS 204)
+fips205 = "0.4.1"   # SLH-DSA (FIPS 205)
+fn-dsa = "0.4.0"    # Falcon / FN-DSA. NIST selected; no published FIPS draft.
+# The post-quantum crates above are built against rand_core 0.6, while the
+# RustCrypto classical crates use rand_core 0.10. Both majors coexist.
+rand_core_06 = { package = "rand_core", version = "0.6.4", features = ["getrandom"] }

@@ -151,13 +151,8 @@ fn repo_root() -> PathBuf {
 
 fn main() -> std::io::Result<()> {
     let quick = std::env::args().any(|a| a == "--quick");
-
     let budget = if quick {
-        Budget {
-            warmup: 5,
-            iterations: 25,
-            keygen_iterations: 25,
-        }
+        Budget::quick()
     } else {
         Budget::default()
     };
@@ -172,18 +167,36 @@ fn main() -> std::io::Result<()> {
     eprintln!("  rustc          {}", environment.rustc);
     eprintln!("  hardware_class {}", environment.hardware_class);
     eprintln!(
-        "  budget         warmup={} iterations={} keygen={}",
-        budget.warmup, budget.iterations, budget.keygen_iterations
+        "  budget         warmup={} min_iters={} max_iters={} per_op_budget={:?}",
+        budget.warmup, budget.min_iterations, budget.max_iterations, budget.per_op_budget
     );
+    if quick {
+        eprintln!("  MODE           quick. Below the N >= 100 floor, not for publication.");
+    }
     eprintln!();
 
+    type BenchFn = fn(Budget) -> SchemeMeasurement;
+    let suite: &[(&str, BenchFn)] = &[
+        ("ed25519", schemes::bench_ed25519),
+        ("ecdsa-secp256k1", schemes::bench_ecdsa_secp256k1),
+        ("ml-dsa-44", schemes::bench_ml_dsa_44),
+        ("falcon-512", schemes::bench_falcon_512),
+        ("slh-dsa-sha2-128s", schemes::bench_slh_dsa_sha2_128s),
+        ("slh-dsa-sha2-128f", schemes::bench_slh_dsa_sha2_128f),
+    ];
+
     let mut measurements: Vec<SchemeMeasurement> = Vec::new();
-
-    eprintln!("measuring ed25519 ...");
-    measurements.push(schemes::bench_ed25519(budget));
-
-    eprintln!("measuring ecdsa-secp256k1 ...");
-    measurements.push(schemes::bench_ecdsa_secp256k1(budget));
+    for (name, f) in suite {
+        eprintln!("measuring {name} ...");
+        let started = SystemTime::now();
+        let m = f(budget);
+        let secs = started
+            .elapsed()
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(f64::NAN);
+        eprintln!("  done in {secs:.1}s");
+        measurements.push(m);
+    }
 
     let results: Vec<ResultRow> = measurements.iter().flat_map(rows_for).collect();
     let tx_sizes: Vec<TxSizeRow> = measurements.iter().flat_map(tx_rows_for).collect();

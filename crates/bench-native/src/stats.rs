@@ -9,7 +9,7 @@
 
 use serde::Serialize;
 use std::hint::black_box;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Summary of one timed measurement.
 #[derive(Debug, Clone, Serialize)]
@@ -39,22 +39,43 @@ fn percentile_sorted(sorted: &[u64], p: f64) -> u64 {
     sorted[idx]
 }
 
-/// Time a closure, discarding `warmup` iterations then measuring `iterations`.
+/// Time a closure with both an iteration target and a wall-clock budget.
 ///
-/// The closure's return value is passed through `black_box` so the optimizer
-/// cannot delete the work being measured.
-pub fn measure<T, F>(warmup: usize, iterations: usize, mut f: F) -> Timing
+/// Always runs at least `min_iterations` (the project requires N >= 100 for
+/// published figures) and then keeps going up to `max_iterations` only while
+/// the elapsed time is under `budget`. SLH-DSA signing is roughly four orders
+/// of magnitude slower than Ed25519 signing, so a single fixed iteration count
+/// either makes the fast schemes imprecise or the slow schemes take minutes.
+///
+/// The iteration count actually achieved is recorded in the results file, so a
+/// reader can always see how many samples a figure rests on.
+pub fn measure_bounded<T, F>(
+    warmup: usize,
+    min_iterations: usize,
+    max_iterations: usize,
+    budget: Duration,
+    mut f: F,
+) -> Timing
 where
     F: FnMut() -> T,
 {
-    assert!(iterations > 0, "iterations must be non-zero");
+    assert!(min_iterations > 0, "min_iterations must be non-zero");
+    assert!(
+        max_iterations >= min_iterations,
+        "max_iterations must be at least min_iterations"
+    );
 
     for _ in 0..warmup {
         black_box(f());
     }
 
-    let mut samples: Vec<u64> = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
+    let mut samples: Vec<u64> = Vec::with_capacity(min_iterations);
+    let overall = Instant::now();
+
+    for i in 0..max_iterations {
+        if i >= min_iterations && overall.elapsed() >= budget {
+            break;
+        }
         let start = Instant::now();
         let out = f();
         let elapsed = start.elapsed();
@@ -126,13 +147,30 @@ mod tests {
     }
 
     #[test]
-    fn measure_runs_the_requested_number_of_iterations() {
+    fn bounded_always_reaches_the_minimum_even_when_over_budget() {
+        // Zero budget: the minimum floor must still be honoured, because the
+        // project requires N >= 100 for published figures.
         let mut calls = 0usize;
-        let t = measure(3, 10, || {
+        let t = measure_bounded(0, 12, 500, Duration::from_nanos(0), || {
+            calls += 1;
+        });
+        assert_eq!(t.iterations, 12, "minimum iterations must be respected");
+    }
+
+    #[test]
+    fn bounded_stops_at_max_when_budget_is_generous() {
+        let t = measure_bounded(0, 2, 7, Duration::from_secs(60), || 1u8);
+        assert_eq!(t.iterations, 7);
+    }
+
+    #[test]
+    fn warmup_iterations_run_but_are_not_measured() {
+        let mut calls = 0usize;
+        let t = measure_bounded(3, 10, 10, Duration::from_secs(60), || {
             calls += 1;
             calls
         });
-        assert_eq!(t.iterations, 10);
-        assert_eq!(calls, 13, "warmup plus measured iterations");
+        assert_eq!(t.iterations, 10, "only measured iterations are reported");
+        assert_eq!(calls, 13, "warmup plus measured iterations actually ran");
     }
 }

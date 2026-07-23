@@ -16,6 +16,10 @@ sha2 = { workspace = true }
 ed25519-dalek = { workspace = true }
 k256 = { workspace = true }
 getrandom = { workspace = true }
+fips204 = { workspace = true }
+fips205 = { workspace = true }
+fn-dsa = { workspace = true }
+rand_core_06 = { workspace = true }
 
 [[bin]]
 name = "bench-native"

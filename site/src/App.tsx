@@ -187,9 +187,29 @@ function NativePerformance() {
     .filter((r) => r.verify)
     .map((r) => ({
       name: r.spec.label,
-      verify_us: (r.verify!.median_ns / 1000),
+      verify_us: r.verify!.median_ns / 1000,
       family: r.spec.family,
     }));
+
+  // Derived from the measurements, never hardcoded, so the callout cannot
+  // drift away from what was actually measured.
+  const verified = rows.filter((r) => r.verify);
+  const fastestVerify = verified.reduce<typeof verified[number] | null>(
+    (best, r) =>
+      best === null || r.verify!.median_ns < best.verify!.median_ns ? r : best,
+    null
+  );
+  const fastestClassical = verified
+    .filter((r) => r.spec.family === "classical")
+    .reduce<typeof verified[number] | null>(
+      (best, r) =>
+        best === null || r.verify!.median_ns < best.verify!.median_ns ? r : best,
+      null
+    );
+  const pqBeatsClassical =
+    fastestVerify !== null &&
+    fastestClassical !== null &&
+    fastestVerify.spec.family !== "classical";
 
   return (
     <Section
@@ -197,6 +217,32 @@ function NativePerformance() {
       title="Native performance"
       lead="Sign, verify and keygen measured outside any circuit, on this machine, with the exact iteration counts recorded in every results file."
     >
+      {pqBeatsClassical && fastestVerify && fastestClassical && (
+        <Panel accent className="mb-6">
+          <h3 className="text-sm font-semibold">
+            Measured: the fastest verification here is post-quantum
+          </h3>
+          <p className="mt-2 text-xs leading-relaxed text-[var(--color-muted)]">
+            {fastestVerify.spec.label} verifies in{" "}
+            <span className="text-[var(--color-fg)]">
+              {formatNs(fastestVerify.verify!.median_ns)}
+            </span>
+            , against {formatNs(fastestClassical.verify!.median_ns)} for{" "}
+            {fastestClassical.spec.label}. Post-quantum signatures are large,
+            but verifying them is not inherently slow. The real costs sit
+            elsewhere: in signature size, in signing time for the hash-based
+            schemes, and in proving.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-[var(--color-muted)]">
+            This compares specific implementations
+            {" "}({fastestVerify.spec.label}: {fastestVerify.verify!.implementation};{" "}
+            {fastestClassical.spec.label}: {fastestClassical.verify!.implementation}),
+            not the schemes in the abstract. A differently optimized library
+            would move these numbers.
+          </p>
+        </Panel>
+      )}
+
       <Panel>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-xs">
