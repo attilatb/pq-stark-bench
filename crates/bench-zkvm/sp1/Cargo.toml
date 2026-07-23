@@ -1,0 +1,11 @@
+# Isolated workspace for the SP1 lane.
+#
+# Separate from the repo root because the guest builds for the SP1
+# riscv64im-succinct-zkvm target with the succinct toolchain. The program under
+# program/ is isolated again by its own empty [workspace].
+[workspace]
+resolver = "2"
+members = ["script"]
+
+[profile.release]
+opt-level = 3

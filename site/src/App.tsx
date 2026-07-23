@@ -8,6 +8,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import type { Family } from "./data";
 import {
   FAMILY_COLOR,
   SCHEME_SPECS,
@@ -366,28 +367,100 @@ function NativePerformance() {
   );
 }
 
+function CycleChart({
+  prover,
+  isa,
+  data,
+}: {
+  prover: string;
+  isa: string;
+  data: Array<{ name: string; cycles: number; family: Family }>;
+}) {
+  return (
+    <Panel>
+      <h3 className="mb-1 text-sm font-semibold">
+        Cycles to verify one signature, {prover}
+        <span className="ml-2 font-normal text-[var(--color-muted)]">
+          {isa}
+        </span>
+      </h3>
+      <div className="h-56 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+          >
+            <CartesianGrid stroke="var(--color-line)" horizontal={false} />
+            <XAxis
+              type="number"
+              tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+              tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(1)}M`}
+            />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={104}
+              tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "var(--color-panel-2)",
+                border: "1px solid var(--color-line)",
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+              formatter={(value) => [
+                `${Number(value).toLocaleString()} cycles`,
+                "verify",
+              ]}
+            />
+            <Bar dataKey="cycles" radius={[0, 4, 4, 0]}>
+              {data.map((d) => (
+                <Cell key={d.name} fill={FAMILY_COLOR[d.family]} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </Panel>
+  );
+}
+
 function InCircuit() {
   const rows = allZkvmWorkloads();
 
-  // Cycle comparison, one prover at a time (cycles are not comparable across
-  // provers). Prefer the RISC Zero rows since that is where the matrix is
-  // fullest. One bar per scheme, deduplicated to the first row per scheme.
-  const cycleProver = rows.find((r) => r.workload.prover.name === "risc0")
-    ?.workload.prover.name;
-  const seenScheme = new Set<string>();
-  const cycleData = rows
-    .filter((r) => r.workload.prover.name === cycleProver)
-    .filter((r) => {
-      if (seenScheme.has(r.workload.scheme.name)) return false;
-      seenScheme.add(r.workload.scheme.name);
-      return r.workload.cost.cycles !== null;
+  // One cycle chart per prover: cycle counts are different units across provers
+  // (RISC Zero is RV32IM, SP1 is RV64IM) and must never share an axis. Within a
+  // prover we take the first row per scheme.
+  const provers = Array.from(
+    new Map(
+      rows.map((r) => [
+        r.workload.prover.name,
+        { name: r.workload.prover.name, isa: r.workload.prover.isa },
+      ])
+    ).values()
+  );
+
+  const cycleCharts = provers
+    .map((p) => {
+      const seen = new Set<string>();
+      const data = rows
+        .filter((r) => r.workload.prover.name === p.name)
+        .filter((r) => {
+          if (seen.has(r.workload.scheme.name)) return false;
+          seen.add(r.workload.scheme.name);
+          return r.workload.cost.cycles !== null;
+        })
+        .map((r) => ({
+          name: r.workload.scheme.name,
+          cycles: r.workload.cost.cycles as number,
+          family: r.workload.scheme.family,
+        }))
+        .sort((a, b) => a.cycles - b.cycles);
+      return { ...p, data };
     })
-    .map((r) => ({
-      name: r.workload.scheme.name,
-      cycles: r.workload.cost.cycles as number,
-      family: r.workload.scheme.family,
-    }))
-    .sort((a, b) => a.cycles - b.cycles);
+    .filter((c) => c.data.length > 1);
 
   return (
     <Section
@@ -395,58 +468,28 @@ function InCircuit() {
       title="In-circuit results"
       lead="What it costs to verify a signature inside the proof. Cycle counts are deterministic and machine independent. Prover wall-clock, peak memory and proof size are tagged with the machine and never mixed across hardware."
     >
-      {cycleData.length > 1 && cycleProver && (
-        <Panel className="mb-6">
-          <h3 className="mb-1 text-sm font-semibold">
-            Cycles to verify one signature, {cycleProver}
-          </h3>
-          <p className="mb-4 text-xs leading-relaxed text-[var(--color-muted)]">
+      {cycleCharts.length > 0 && (
+        <>
+          <p className="mb-4 max-w-3xl text-xs leading-relaxed text-[var(--color-muted)]">
             Stock builds, no precompiles on any scheme. Falcon-512 verification
-            is the cheapest here, below classical Ed25519. The classical schemes
-            have precompiles available and the post-quantum ones do not, so an
-            accelerated comparison would look different. That asymmetry is the
-            point.
+            is the cheapest on both provers, below classical Ed25519. The two
+            provers use different instruction sets, so their cycle counts are
+            not comparable to each other and never share an axis. The classical
+            schemes have precompiles available and the post-quantum ones do not,
+            so an accelerated comparison would look different. That asymmetry is
+            the point.
           </p>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={cycleData}
-                layout="vertical"
-                margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
-              >
-                <CartesianGrid stroke="var(--color-line)" horizontal={false} />
-                <XAxis
-                  type="number"
-                  tick={{ fill: "var(--color-muted)", fontSize: 11 }}
-                  tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(1)}M`}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={110}
-                  tick={{ fill: "var(--color-muted)", fontSize: 11 }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--color-panel-2)",
-                    border: "1px solid var(--color-line)",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  formatter={(value) => [
-                    `${Number(value).toLocaleString()} cycles`,
-                    "verify",
-                  ]}
-                />
-                <Bar dataKey="cycles" radius={[0, 4, 4, 0]}>
-                  {cycleData.map((d) => (
-                    <Cell key={d.name} fill={FAMILY_COLOR[d.family]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {cycleCharts.map((c) => (
+              <CycleChart
+                key={c.name}
+                prover={c.name}
+                isa={c.isa}
+                data={c.data}
+              />
+            ))}
           </div>
-        </Panel>
+        </>
       )}
 
       {rows.length === 0 ? (
