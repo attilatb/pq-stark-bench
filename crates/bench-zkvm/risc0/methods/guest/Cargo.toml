@@ -15,6 +15,10 @@ path = "src/falcon512_verify.rs"
 name = "mldsa44_verify"
 path = "src/mldsa44_verify.rs"
 
+[[bin]]
+name = "slhdsa128s_verify"
+path = "src/slhdsa128s_verify.rs"
+
 [dependencies]
 risc0-zkvm = { version = "3.0", default-features = false, features = ["std"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
@@ -31,6 +35,10 @@ fn-dsa-vrfy = { version = "0.4.0", default-features = false }
 # feature-gated; default-rng is left off because the guest has no OS RNG and
 # verification needs none. Stock: no SHAKE precompile reaches it (disclosed).
 fips204 = { version = "0.4.6", default-features = false, features = ["ml-dsa-44"] }
+
+# SLH-DSA-SHA2-128s (FIPS 205). Hash-based, no_std. Stock: no SHA-256
+# precompile is routed here (disclosed). Verification needs no RNG.
+fips205 = { version = "0.4.1", default-features = false, features = ["slh_dsa_sha2_128s"] }
 
 [profile.release]
 opt-level = 3

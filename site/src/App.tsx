@@ -398,13 +398,18 @@ function CycleChart({
             <CartesianGrid stroke="var(--color-line)" horizontal={false} />
             <XAxis
               type="number"
+              scale="log"
+              domain={[100000, "dataMax"]}
+              allowDataOverflow
               tick={{ fill: "var(--color-muted)", fontSize: 11 }}
-              tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(1)}M`}
+              tickFormatter={(v: number) =>
+                v >= 1_000_000 ? `${(v / 1_000_000).toFixed(0)}M` : `${(v / 1000).toFixed(0)}k`
+              }
             />
             <YAxis
               type="category"
               dataKey="name"
-              width={104}
+              width={116}
               tick={{ fill: "var(--color-muted)", fontSize: 11 }}
             />
             <Tooltip
@@ -505,13 +510,15 @@ function InCircuit() {
       {cycleCharts.length > 0 && (
         <>
           <p className="mb-4 max-w-3xl text-xs leading-relaxed text-[var(--color-muted)]">
-            Stock builds, no precompiles on any scheme. Falcon-512 verification
-            is the cheapest on both provers, below classical Ed25519. The two
-            provers use different instruction sets, so their cycle counts are
-            not comparable to each other and never share an axis. The classical
-            schemes have precompiles available and the post-quantum ones do not,
-            so an accelerated comparison would look different. That asymmetry is
-            the point.
+            Log scale. Stock builds unless the bar says accel. Unaccelerated,
+            Falcon-512 verification is cheaper than classical Ed25519 on both
+            provers, and hash-based SLH-DSA is far more expensive than either
+            lattice scheme. The precompile is what flips the classical
+            comparison: with the curve25519 accelerator, Ed25519 drops below
+            Falcon. The classical schemes have that accelerator and the
+            post-quantum ones have none, which is the asymmetry the whole
+            project exists to measure. The two provers use different instruction
+            sets, so their cycle counts never share an axis.
           </p>
           <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             {cycleCharts.map((c) => (

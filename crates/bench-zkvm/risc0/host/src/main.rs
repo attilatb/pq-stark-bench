@@ -134,9 +134,26 @@ fn scheme_def(scheme: &str) -> SchemeDef {
                 "no lattice or NTT precompile on this prover",
             ],
         },
-        other => {
-            panic!("unknown scheme: {other}. Use ed25519 | ed25519accel | falcon512 | mldsa44")
-        }
+        "slhdsa128s" => SchemeDef {
+            name: "slh-dsa-sha2-128s",
+            family: Family::Hash,
+            spec: "NIST FIPS 205",
+            crate_name: "fips205",
+            crate_version: "0.4.1",
+            hash_primitive: "SHA-256",
+            conformant: true,
+            elf: methods::SLHDSA128S_VERIFY_ELF,
+            image_id: methods::SLHDSA128S_VERIFY_ID,
+            precompiles: &[],
+            accel_assert_below: None,
+            caveats: &[
+                "stock: no SHA-256 precompile is routed to fips205, so it runs as plain RISC-V",
+                "hash-based: verification is dominated by SHA-256",
+            ],
+        },
+        other => panic!(
+            "unknown scheme: {other}. Use ed25519 | ed25519accel | falcon512 | mldsa44 | slhdsa128s"
+        ),
     }
 }
 
@@ -146,6 +163,7 @@ fn build_batch(scheme: &str, n: u32) -> GuestBatch {
         "ed25519" | "ed25519accel" => build_ed25519(n),
         "falcon512" => build_falcon512(n),
         "mldsa44" => build_mldsa44(n),
+        "slhdsa128s" => build_slhdsa128s(n),
         other => panic!("unknown scheme: {other}"),
     }
 }
@@ -209,6 +227,25 @@ fn build_mldsa44(n: u32) -> GuestBatch {
         let pubkey = pk.into_bytes().to_vec();
         let message = canonical_message(&pubkey);
         let sig = sk.try_sign(&message, b"").expect("ml-dsa-44 sign");
+        jobs.push(VerifyJob {
+            message,
+            pubkey,
+            signature: sig.to_vec(),
+        });
+    }
+    GuestBatch { jobs }
+}
+
+fn build_slhdsa128s(n: u32) -> GuestBatch {
+    use fips205::slh_dsa_sha2_128s;
+    use fips205::traits::{SerDes, Signer};
+    let mut jobs = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let (pk, sk) = slh_dsa_sha2_128s::try_keygen().expect("slh-dsa keygen");
+        let pubkey = pk.into_bytes().to_vec();
+        let message = canonical_message(&pubkey);
+        // Hedged (randomized) signing is the FIPS 205 default.
+        let sig = sk.try_sign(&message, b"", true).expect("slh-dsa sign");
         jobs.push(VerifyJob {
             message,
             pubkey,

@@ -85,19 +85,24 @@ Cycles to verify one signature, N=1, stock unless noted, Apple M3 Max:
 
 | scheme | RISC Zero (RV32IM) | SP1 (RV64IM) |
 | --- | --- | --- |
-| falcon-512 | 1,055,318 | 552,817 |
-| ed25519 | 3,244,248 | 791,791 |
-| ml-dsa-44 | 4,029,079 | 1,788,262 |
 | ed25519, curve25519 precompile | 886,721 | not yet measured |
+| falcon-512 | 1,055,318 | 552,817 |
+| ed25519 (stock) | 3,244,248 | 791,791 |
+| ml-dsa-44 | 4,029,079 | 1,788,262 |
+| slh-dsa-sha2-128s | 20,853,851 | 17,999,691 |
 
-Both provers agree on the ordering. Two findings worth stating plainly, both
-measured, neither a discovery:
+Both provers agree on the ordering. Three findings worth stating plainly, all
+measured, none a discovery:
 
 - Unaccelerated, Falcon-512 verification is cheaper in-circuit than Ed25519.
   The precompile is what flips it: with the RISC Zero curve25519 accelerator,
   Ed25519 drops to 886,721 cycles, a 3.66x reduction, and lands below Falcon.
   That is the precompile asymmetry made concrete, and the harness asserts the
   precompile actually engaged rather than assuming it.
+- Hash-based SLH-DSA-128s is far more expensive to verify in-circuit than
+  either lattice scheme, roughly 5x ML-DSA-44 and 20x accelerated Ed25519,
+  because its verification is dominated by a large number of SHA-256
+  invocations. That is the honest cost of the conservative hash-based option.
 - Per-signature cycle cost is flat across batch sizes 1 to 16 for every scheme
   (for example ML-DSA-44 stays within 0.1 percent of 4.03M cycles per
   signature). Only proof size amortizes. This confirms prior work on our own

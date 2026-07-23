@@ -15,6 +15,10 @@ path = "src/bin/falcon512_verify.rs"
 name = "mldsa44_verify"
 path = "src/bin/mldsa44_verify.rs"
 
+[[bin]]
+name = "slhdsa128s_verify"
+path = "src/bin/slhdsa128s_verify.rs"
+
 [dependencies]
 sp1-zkvm = "6.0"
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
@@ -27,6 +31,9 @@ fn-dsa-vrfy = { version = "0.4.0", default-features = false }
 
 # ML-DSA-44 (FIPS 204). Stock: no SHAKE precompile reaches it (disclosed).
 fips204 = { version = "0.4.6", default-features = false, features = ["ml-dsa-44"] }
+
+# SLH-DSA-SHA2-128s (FIPS 205). Hash-based, no_std, stock (disclosed).
+fips205 = { version = "0.4.1", default-features = false, features = ["slh_dsa_sha2_128s"] }
 
 [profile.release]
 opt-level = 3
