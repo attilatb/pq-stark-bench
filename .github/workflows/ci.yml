@@ -31,22 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Enforce positioning and style rules
-        run: |
-          files=$(git ls-files 'docs/*.md' 'site/src/**' 'README.md' \
-            | grep -v 'KICKOFF-v1-superseded' | grep -v '^docs/research/' || true)
-          if [ -z "$files" ]; then exit 0; fi
-          fail=0
-          if grep -lP '\x{2014}' $files 2>/dev/null; then
-            echo "FAIL: em dash found. House style is hyphens only."
-            fail=1
-          fi
-          for phrase in "world's first" "first ever" "quantum-proof" "unbreakable"; do
-            if grep -ril "$phrase" $files 2>/dev/null; then
-              echo "FAIL: banned phrase '$phrase'."
-              fail=1
-            fi
-          done
-          exit $fail
+        run: bash scripts/check-copy.sh
 
   site:
     runs-on: ubuntu-latest

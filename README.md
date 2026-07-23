@@ -91,10 +91,9 @@ table.
   versions and methodology disclosed.
 - A benchmark that fails or proves infeasible is published as a negative
   result.
-- Language is "post-quantum" or "quantum-resistant per NIST standardization",
-  never "quantum-proof" or "unbreakable". Falcon has no published FIPS draft as
-  of July 2026, so it is described as NIST selected rather than FIPS
-  conformant.
+- Language is "post-quantum" or "quantum-resistant per NIST standardization", never "quantum-proof" or "unbreakable". <!-- copy-rules:allow -->
+  Falcon has no published FIPS draft as of July 2026, so it is described as
+  NIST selected rather than FIPS conformant.
 
 `just check-copy` enforces the wording rules mechanically in CI.
 

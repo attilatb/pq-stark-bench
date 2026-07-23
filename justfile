@@ -27,26 +27,7 @@ lint:
 # Fail the build if banned phrasing or em dashes creep into published copy.
 # The positioning rules are load-bearing, so they are enforced mechanically.
 check-copy:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    files=$(git ls-files 'docs/*.md' 'site/src/**' 'README.md' | grep -v 'KICKOFF-v1-superseded' | grep -v '^docs/research/' || true)
-    [ -z "$files" ] && exit 0
-    fail=0
-    if grep -lP '\x{2014}' $files 2>/dev/null; then
-        echo "FAIL: em dash found. House style is hyphens only."
-        fail=1
-    fi
-    for phrase in "world's first" "first ever" "quantum-proof" "quantum proof" "unbreakable"; do
-        if grep -ril "$phrase" $files 2>/dev/null; then
-            echo "FAIL: banned phrase '$phrase'."
-            fail=1
-        fi
-    done
-    if grep -rin "first post-quantum signature verification in a STARK" $files 2>/dev/null; then
-        echo "FAIL: that claim is false. See docs/LITERATURE.md."
-        fail=1
-    fi
-    exit $fail
+    bash scripts/check-copy.sh
 
 site-dev:
     npm --prefix site install
