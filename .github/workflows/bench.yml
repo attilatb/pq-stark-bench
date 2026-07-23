@@ -1,0 +1,38 @@
+name: bench
+
+# Manual and scheduled native benchmark runs on CI hardware.
+#
+# CI results are labelled hardware_class=ci-x86 by the harness and must never be
+# plotted on the same series as local or cloud runs. GitHub runners are shared,
+# unpinned and noisy, so these runs exist to catch regressions in the harness,
+# not to produce publication-grade timings.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays 06:00 UTC.
+    - cron: "0 6 * * 1"
+
+jobs:
+  bench-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run native benchmarks
+        run: cargo run --release -p bench-native
+
+      - name: Show what was produced
+        run: |
+          ls -la results/native/
+          echo "--- newest ---"
+          cat "$(ls -t results/native/*.json | head -1)"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-results-ci
+          path: results/native/*.json
+          if-no-files-found: error

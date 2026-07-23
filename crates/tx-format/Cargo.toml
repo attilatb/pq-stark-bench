@@ -1,0 +1,10 @@
+[package]
+name = "tx-format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Canonical transaction format used for bytes-per-transaction accounting across every scheme"
+
+[dependencies]
+serde = { workspace = true }

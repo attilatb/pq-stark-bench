@@ -1,0 +1,22 @@
+/target
+**/target
+Cargo.lock.bak
+
+# Site
+node_modules
+site/dist
+site/.vite
+site/node_modules
+
+# OS
+.DS_Store
+
+# Never commit credentials
+.env
+.env.*
+!.env.example
+*.pem
+netlify.toml.local
+
+# Generated at build time by site/scripts/collect-results.mjs
+site/src/generated/

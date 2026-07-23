@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/tx-format", "crates/bench-native"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/attilatb/pq-stark-bench"
+
+[profile.release]
+# Benchmarks must be optimized, and we want reproducible codegen.
+# Declared at the workspace root because cargo ignores member profiles.
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = true
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Classical baselines.
+ed25519-dalek = { version = "3.0.0", features = ["rand_core"] }
+k256 = { version = "0.14.0", features = ["ecdsa"] }
+# The RustCrypto 2026 releases moved to rand_core 0.10, where the system RNG
+# lives in getrandom as SysRng and is adapted to CryptoRng via UnwrapErr.
+getrandom = { version = "0.4", features = ["sys_rng"] }
+sha2 = "0.10"
+hex = "0.4"

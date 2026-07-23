@@ -1,0 +1,5 @@
+[toolchain]
+# Pinned so a stranger cloning this repo reproduces the same numbers.
+# Recorded in every results file as environment.rustc.
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
