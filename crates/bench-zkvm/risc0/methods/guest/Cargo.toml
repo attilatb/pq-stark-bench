@@ -1,5 +1,5 @@
 [package]
-name = "pqb-guest-ed25519"
+name = "pqb-guest"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,14 +7,30 @@ edition = "2021"
 name = "ed25519_verify"
 path = "src/ed25519_verify.rs"
 
+[[bin]]
+name = "falcon512_verify"
+path = "src/falcon512_verify.rs"
+
+[[bin]]
+name = "mldsa44_verify"
+path = "src/mldsa44_verify.rs"
+
 [dependencies]
 risc0-zkvm = { version = "3.0", default-features = false, features = ["std"] }
-# Stock ed25519-dalek: the portable backend, no prover-specific accelerator.
-# This is the honest worst case for the classical control. An accelerated
-# variant is added separately so the delta (the value of the curve25519
-# precompile) is itself a published number.
-ed25519-dalek = { version = "2.1", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+
+# Classical control. Stock portable backend, no curve25519 precompile: the
+# honest worst case. An accelerated variant is measured separately.
+ed25519-dalek = { version = "2.1", default-features = false }
+
+# Falcon-512 / FN-DSA verification. Integer-only and no_std, so it is safe in a
+# soft-float guest. This is the cleanest post-quantum leg.
+fn-dsa-vrfy = { version = "0.4.0", default-features = false }
+
+# ML-DSA-44 (FIPS 204). Pure Rust, no_std. The ml-dsa-44 parameter set is
+# feature-gated; default-rng is left off because the guest has no OS RNG and
+# verification needs none. Stock: no SHAKE precompile reaches it (disclosed).
+fips204 = { version = "0.4.6", default-features = false, features = ["ml-dsa-44"] }
 
 [profile.release]
 opt-level = 3

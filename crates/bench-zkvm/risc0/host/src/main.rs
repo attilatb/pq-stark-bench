@@ -1,17 +1,19 @@
-//! RISC Zero host: measures the cost of verifying Ed25519 signatures in-circuit.
+//! RISC Zero host: measures the cost of verifying signatures in-circuit.
 //!
-//! The pipeline is: build a batch of real signatures on the host, execute the
-//! guest to get a deterministic cycle count (no proving), then generate a real
-//! proof to measure prover wall-clock, proof size, peak memory and verify time.
-//! Results are written to results/zkvm/ in the shared schema.
+//! Usage: risc0-bench <scheme> <mode> [N]
+//!   scheme: ed25519 | falcon512 | mldsa44
+//!   mode:   execute | prove
+//!   N:      batch size, default 1
 //!
-//! Every number here comes from an actual run. Cycle counts are deterministic
-//! and machine independent; wall-clock and memory are tagged with the machine's
-//! hardware_class and must never be plotted against a different class.
+//! `execute` runs the guest for a deterministic cycle count and nothing else,
+//! which is fast and machine independent. `prove` additionally generates a real
+//! proof and measures prover wall-clock, proof size, peak memory and verify
+//! time, which are hardware dependent and tagged with the machine's class.
+//!
+//! Every number here comes from an actual run.
 
-use ed25519_dalek::{Signer, SigningKey};
 use pqb_core::{env as pqbenv, time};
-use pqb_risc0_methods::{ED25519_VERIFY_ELF, ED25519_VERIFY_ID};
+use pqb_risc0_methods as methods;
 use pqb_zkvm_common::{
     Batch, Cost, Family, Prover, Scheme, SecurityBits, SecurityKind, Status, Topology, Workload,
     ZkvmResultsFile,
@@ -28,7 +30,7 @@ use std::time::{Instant, SystemTime};
 struct VerifyJob {
     message: Vec<u8>,
     // Byte vectors, not fixed arrays: serde's derive only covers arrays up to
-    // length 32 and the signature is 64 bytes. Must match the guest exactly.
+    // length 32. Must match the guest exactly.
     pubkey: Vec<u8>,
     signature: Vec<u8>,
 }
@@ -38,16 +40,94 @@ struct GuestBatch {
     jobs: Vec<VerifyJob>,
 }
 
-/// Build N real Ed25519 signatures over the canonical transaction preimage.
-fn build_batch(n: u32) -> GuestBatch {
+/// The canonical transaction preimage that every scheme signs.
+fn canonical_message(pubkey: &[u8]) -> Vec<u8> {
+    tx_format::signing_preimage(1, 42, pubkey, &[0xAB; 32], 1_000_000, 1_000, &[0u8; 32])
+}
+
+/// Static description of a scheme and the guest that verifies it.
+struct SchemeDef {
+    name: &'static str,
+    family: Family,
+    spec: &'static str,
+    crate_name: &'static str,
+    crate_version: &'static str,
+    hash_primitive: &'static str,
+    conformant: bool,
+    elf: &'static [u8],
+    image_id: [u32; 8],
+    /// Extra disclosures beyond the shared ones.
+    caveats: &'static [&'static str],
+}
+
+fn scheme_def(scheme: &str) -> SchemeDef {
+    match scheme {
+        "ed25519" => SchemeDef {
+            name: "ed25519",
+            family: Family::Classical,
+            spec: "RFC 8032 (classical, not post-quantum)",
+            crate_name: "ed25519-dalek",
+            crate_version: "2.1",
+            hash_primitive: "SHA-512",
+            conformant: true,
+            elf: methods::ED25519_VERIFY_ELF,
+            image_id: methods::ED25519_VERIFY_ID,
+            caveats: &[
+                "stock ed25519-dalek: no curve25519 precompile, the honest worst case",
+            ],
+        },
+        "falcon512" => SchemeDef {
+            name: "falcon-512",
+            family: Family::Lattice,
+            spec: "NIST selected. FIPS 206 not published as of 2026-07-23.",
+            crate_name: "fn-dsa-vrfy",
+            crate_version: "0.4.0",
+            hash_primitive: "SHAKE-256",
+            conformant: true,
+            elf: methods::FALCON512_VERIFY_ELF,
+            image_id: methods::FALCON512_VERIFY_ID,
+            caveats: &[
+                "verification is integer-only; signing is done on the host",
+                "no lattice or NTT precompile on this prover",
+            ],
+        },
+        "mldsa44" => SchemeDef {
+            name: "ml-dsa-44",
+            family: Family::Lattice,
+            spec: "NIST FIPS 204",
+            crate_name: "fips204",
+            crate_version: "0.4.6",
+            hash_primitive: "SHAKE-256",
+            conformant: true,
+            elf: methods::MLDSA44_VERIFY_ELF,
+            image_id: methods::MLDSA44_VERIFY_ID,
+            caveats: &[
+                "stock: no SHAKE precompile reaches fips204, so SHAKE runs as plain RISC-V",
+                "no lattice or NTT precompile on this prover",
+            ],
+        },
+        other => panic!("unknown scheme: {other}. Use ed25519 | falcon512 | mldsa44"),
+    }
+}
+
+/// Build N real signatures for the given scheme, signing on the host.
+fn build_batch(scheme: &str, n: u32) -> GuestBatch {
+    match scheme {
+        "ed25519" => build_ed25519(n),
+        "falcon512" => build_falcon512(n),
+        "mldsa44" => build_mldsa44(n),
+        other => panic!("unknown scheme: {other}"),
+    }
+}
+
+fn build_ed25519(n: u32) -> GuestBatch {
+    use ed25519_dalek::{Signer, SigningKey};
     let mut rng = rand_core::OsRng;
     let mut jobs = Vec::with_capacity(n as usize);
     for _ in 0..n {
         let sk = SigningKey::generate(&mut rng);
-        let vk = sk.verifying_key();
-        let pubkey = vk.to_bytes();
-        let message =
-            tx_format::signing_preimage(1, 42, &pubkey, &[0xAB; 32], 1_000_000, 1_000, &[0u8; 32]);
+        let pubkey = sk.verifying_key().to_bytes();
+        let message = canonical_message(&pubkey);
         let signature = sk.sign(&message).to_bytes();
         jobs.push(VerifyJob {
             message,
@@ -58,11 +138,57 @@ fn build_batch(n: u32) -> GuestBatch {
     GuestBatch { jobs }
 }
 
+fn build_falcon512(n: u32) -> GuestBatch {
+    use fn_dsa::{
+        sign_key_size, signature_size, vrfy_key_size, KeyPairGenerator, KeyPairGeneratorStandard,
+        SigningKey, SigningKeyStandard, DOMAIN_NONE, FN_DSA_LOGN_512, HASH_ID_RAW,
+    };
+    let logn = FN_DSA_LOGN_512;
+    let mut jobs = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let mut kg = KeyPairGeneratorStandard::default();
+        let mut sk_buf = vec![0u8; sign_key_size(logn)];
+        let mut vk_buf = vec![0u8; vrfy_key_size(logn)];
+        kg.keygen(logn, &mut rand_core::OsRng, &mut sk_buf, &mut vk_buf);
+
+        let message = canonical_message(&vk_buf);
+        let mut sk = SigningKeyStandard::decode(&sk_buf).expect("falcon signing key");
+        let mut sig = vec![0u8; signature_size(logn)];
+        sk.sign(
+            &mut rand_core::OsRng,
+            &DOMAIN_NONE,
+            &HASH_ID_RAW,
+            &message,
+            &mut sig,
+        );
+        jobs.push(VerifyJob {
+            message,
+            pubkey: vk_buf,
+            signature: sig,
+        });
+    }
+    GuestBatch { jobs }
+}
+
+fn build_mldsa44(n: u32) -> GuestBatch {
+    use fips204::ml_dsa_44;
+    use fips204::traits::{SerDes, Signer};
+    let mut jobs = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let (pk, sk) = ml_dsa_44::try_keygen().expect("ml-dsa-44 keygen");
+        let pubkey = pk.into_bytes().to_vec();
+        let message = canonical_message(&pubkey);
+        let sig = sk.try_sign(&message, b"").expect("ml-dsa-44 sign");
+        jobs.push(VerifyJob {
+            message,
+            pubkey,
+            signature: sig.to_vec(),
+        });
+    }
+    GuestBatch { jobs }
+}
+
 /// Peak resident set size of this process, in megabytes.
-///
-/// The prover runs in-process, so this captures its peak. getrusage is the
-/// portable way to read this; ru_maxrss is bytes on macOS and kilobytes on
-/// Linux, which is handled below.
 fn peak_rss_mb() -> f64 {
     // SAFETY: getrusage with a stack-allocated, zeroed rusage is a read-only
     // syscall with no aliasing or lifetime concerns.
@@ -102,7 +228,6 @@ fn tool_version(bin: &str, args: &[&str]) -> String {
 }
 
 fn repo_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR is crates/bench-zkvm/risc0/host.
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for _ in 0..4 {
         p = p.parent().map(PathBuf::from).unwrap_or(p);
@@ -111,83 +236,97 @@ fn repo_root() -> PathBuf {
 }
 
 fn main() {
+    let scheme_arg = std::env::args().nth(1).unwrap_or_else(|| "ed25519".into());
+    let mode = std::env::args().nth(2).unwrap_or_else(|| "execute".into());
     let batch_size: u32 = std::env::args()
-        .nth(1)
+        .nth(3)
         .and_then(|a| a.parse().ok())
         .unwrap_or(1);
 
-    eprintln!("PQ-STARK-BENCH risc0 lane: ed25519 verify, N={batch_size}");
+    let def = scheme_def(&scheme_arg);
+    let proving = mode == "prove";
 
-    let batch = build_batch(batch_size);
+    eprintln!(
+        "PQ-STARK-BENCH risc0 lane: {} verify, mode={mode}, N={batch_size}",
+        def.name
+    );
 
-    // --- 1. Execute only: deterministic cycle count, no proving. ---
+    let batch = build_batch(&scheme_arg, batch_size);
+
+    // --- Execute: deterministic cycle count, no proving. ---
     eprintln!("executing guest for cycle count ...");
     let exec_env = ExecutorEnv::builder()
         .write(&batch)
         .expect("write batch")
         .build()
         .expect("build exec env");
-
     let session = default_executor()
-        .execute(exec_env, ED25519_VERIFY_ELF)
+        .execute(exec_env, def.elf)
         .expect("guest execution");
-
     let user_cycles = session.cycles();
     let total_cycles = session.segments.iter().map(|s| 1u64 << s.po2).sum::<u64>();
+    let (n_exec, verified_exec): (u32, u32) = session.journal.decode().expect("decode journal");
+    assert_eq!(n_exec, batch_size, "guest saw a different batch size");
+    assert_eq!(
+        verified_exec, batch_size,
+        "guest did not verify every signature: {verified_exec}/{batch_size}"
+    );
     eprintln!("  user cycles: {user_cycles}, padded cycles: {total_cycles}");
 
-    // --- 2. Prove: warm the Metal kernels once, then measure. ---
-    // The first proof on Apple Silicon JIT-compiles GPU kernels, so its wall
-    // time is not representative. It is discarded per the methodology.
-    eprintln!("proving (warmup, discarded) ...");
-    let warm_env = ExecutorEnv::builder()
-        .write(&batch)
-        .expect("write batch")
-        .build()
-        .expect("build env");
-    let _ = default_prover()
-        .prove_with_opts(warm_env, ED25519_VERIFY_ELF, &ProverOpts::default())
-        .expect("warmup proof");
+    // --- Prove (optional): wall-clock, proof size, peak RAM, verify. ---
+    let mut prove_ms = None;
+    let mut peak_ram_mb = None;
+    let mut proof_bytes = None;
+    let mut verify_ms = None;
 
-    eprintln!("proving (measured) ...");
-    let prove_env = ExecutorEnv::builder()
-        .write(&batch)
-        .expect("write batch")
-        .build()
-        .expect("build env");
-    let t0 = Instant::now();
-    let prove_info = default_prover()
-        .prove_with_opts(prove_env, ED25519_VERIFY_ELF, &ProverOpts::default())
-        .expect("measured proof");
-    let prove_ms = t0.elapsed().as_secs_f64() * 1000.0;
-    let peak_ram_mb = peak_rss_mb();
+    if proving {
+        // Warm the Metal kernels once; the first proof JIT-compiles them.
+        eprintln!("proving (warmup, discarded) ...");
+        let warm_env = ExecutorEnv::builder()
+            .write(&batch)
+            .expect("write")
+            .build()
+            .expect("env");
+        let _ = default_prover()
+            .prove_with_opts(warm_env, def.elf, &ProverOpts::default())
+            .expect("warmup proof");
 
-    let receipt = prove_info.receipt;
-    let proof_bytes = bincode::serialize(&receipt).map(|v| v.len()).ok();
+        eprintln!("proving (measured) ...");
+        let prove_env = ExecutorEnv::builder()
+            .write(&batch)
+            .expect("write")
+            .build()
+            .expect("env");
+        let t0 = Instant::now();
+        let prove_info = default_prover()
+            .prove_with_opts(prove_env, def.elf, &ProverOpts::default())
+            .expect("measured proof");
+        prove_ms = Some(t0.elapsed().as_secs_f64() * 1000.0);
+        peak_ram_mb = Some(peak_rss_mb());
 
-    // --- 3. Verify, and check the guest actually verified every signature. ---
-    let t1 = Instant::now();
-    receipt.verify(ED25519_VERIFY_ID).expect("receipt verifies");
-    let verify_ms = t1.elapsed().as_secs_f64() * 1000.0;
+        let receipt = prove_info.receipt;
+        proof_bytes = bincode::serialize(&receipt).map(|v| v.len()).ok();
 
-    let (n_committed, verified): (u32, u32) = receipt.journal.decode().expect("decode journal");
-    assert_eq!(n_committed, batch_size, "guest saw a different batch size");
-    assert_eq!(
-        verified, batch_size,
-        "guest did not verify every signature: {verified}/{batch_size}"
-    );
-    eprintln!("  proved that {verified}/{batch_size} ed25519 signatures verify");
+        let t1 = Instant::now();
+        receipt.verify(def.image_id).expect("receipt verifies");
+        verify_ms = Some(t1.elapsed().as_secs_f64() * 1000.0);
 
-    // --- 4. Assemble and write the results file. ---
+        let (_n, verified): (u32, u32) = receipt.journal.decode().expect("journal");
+        assert_eq!(verified, batch_size, "proof did not verify every signature");
+        eprintln!("  proved that {verified}/{batch_size} {} signatures verify", def.name);
+    }
+
+    // --- Assemble and write the results file. ---
     let environment = pqbenv::capture();
-    let backend = if environment.hardware_class == "local-m3max" {
+    let backend = if !proving {
+        "none"
+    } else if environment.hardware_class == "local-m3max" {
         "metal"
     } else {
         "cpu-scalar"
     };
 
     let mut toolchain = BTreeMap::new();
-    // cargo-risczero is a cargo subcommand, not a standalone binary on PATH.
     toolchain.insert(
         "cargo-risczero".to_string(),
         tool_version("cargo", &["risczero", "--version"]),
@@ -195,15 +334,29 @@ fn main() {
     toolchain.insert("r0vm".to_string(), tool_version("r0vm", &["--version"]));
     toolchain.insert("rustc".to_string(), environment.rustc.clone());
 
+    let mut caveats = vec![
+        "cycle counts are deterministic and machine independent".to_string(),
+    ];
+    caveats.extend(def.caveats.iter().map(|c| c.to_string()));
+    if proving {
+        caveats.push(
+            "wall-clock and peak RAM are hardware-class local-m3max, not comparable across machines"
+                .to_string(),
+        );
+        caveats.push(
+            "composite receipt: proof size grows with segment count, not constant".to_string(),
+        );
+    }
+
     let workload = Workload {
         scheme: Scheme {
-            name: "ed25519".into(),
-            family: Family::Classical,
-            spec: "RFC 8032 (classical, not post-quantum)".into(),
-            crate_name: "ed25519-dalek".into(),
-            crate_version: "2.1".into(),
-            hash_primitive: "SHA-512".into(),
-            conformant: true,
+            name: def.name.into(),
+            family: def.family,
+            spec: def.spec.into(),
+            crate_name: def.crate_name.into(),
+            crate_version: def.crate_version.into(),
+            hash_primitive: def.hash_primitive.into(),
+            conformant: def.conformant,
             prerelease: false,
         },
         prover: Prover {
@@ -215,15 +368,13 @@ fn main() {
                 .to_string(),
             isa: "riscv32im".into(),
             backend: backend.into(),
-            proof_mode: "composite".into(),
+            proof_mode: if proving { "composite" } else { "execute" }.into(),
             security_bits: SecurityBits {
                 value: Some(96),
                 kind: SecurityKind::Claimed,
-                source:
-                    "https://dev.risczero.com/api/security-model, accessed 2026-07-23"
-                        .into(),
+                source: "https://dev.risczero.com/api/security-model, accessed 2026-07-23".into(),
             },
-            segment_limit_po2: session.segments.first().map(|s| s.po2 as u32),
+            segment_limit_po2: session.segments.first().map(|s| s.po2),
             precompiles_used: vec![],
             precompile_assert_passed: false,
         },
@@ -236,23 +387,25 @@ fn main() {
             cycles: Some(user_cycles),
             cycles_source: Some("SessionInfo::cycles".into()),
             total_cycles: Some(total_cycles),
-            prove_ms: Some(prove_ms),
-            peak_ram_mb: Some(peak_ram_mb),
+            prove_ms,
+            peak_ram_mb,
             proof_bytes,
-            verify_ms: Some(verify_ms),
+            verify_ms,
         },
         status: Status::Ok,
         abort_reason: None,
-        caveats: vec![
-            "stock ed25519-dalek: no curve25519 precompile, this is the honest worst case".into(),
-            "composite receipt: proof size grows with segment count, not constant".into(),
-            "wall-clock and peak RAM are hardware-class local-m3max, not comparable across machines".into(),
-        ],
+        caveats,
     };
 
     let now = SystemTime::now();
     let host = pqbenv::host_label();
-    let run_id = format!("{}-risc0", time::run_id(now, &host));
+    let run_id = format!(
+        "{}-risc0-{}-{}-n{}",
+        time::run_id(now, &host),
+        def.name,
+        mode,
+        batch_size
+    );
 
     let file = ZkvmResultsFile {
         run_id: run_id.clone(),
@@ -268,13 +421,23 @@ fn main() {
     std::fs::create_dir_all(&out_dir).expect("create results dir");
     let out_path = out_dir.join(format!("{run_id}.json"));
     let mut f = std::fs::File::create(&out_path).expect("create results file");
-    f.write_all(file.to_json().as_bytes())
-        .expect("write results");
+    f.write_all(file.to_json().as_bytes()).expect("write results");
 
     eprintln!();
     eprintln!(
-        "  ed25519 N={batch_size}: {user_cycles} cycles, prove {prove_ms:.0} ms, verify {verify_ms:.1} ms, proof {} B, peak {peak_ram_mb:.0} MB",
-        proof_bytes.unwrap_or(0)
+        "  {} N={batch_size}: {user_cycles} cycles{}",
+        def.name,
+        if proving {
+            format!(
+                ", prove {:.0} ms, verify {:.1} ms, proof {} B, peak {:.0} MB",
+                prove_ms.unwrap_or(0.0),
+                verify_ms.unwrap_or(0.0),
+                proof_bytes.unwrap_or(0),
+                peak_ram_mb.unwrap_or(0.0)
+            )
+        } else {
+            String::new()
+        }
     );
     eprintln!("wrote {}", out_path.display());
 }

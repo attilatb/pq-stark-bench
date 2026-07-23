@@ -369,12 +369,86 @@ function NativePerformance() {
 function InCircuit() {
   const rows = allZkvmWorkloads();
 
+  // Cycle comparison, one prover at a time (cycles are not comparable across
+  // provers). Prefer the RISC Zero rows since that is where the matrix is
+  // fullest. One bar per scheme, deduplicated to the first row per scheme.
+  const cycleProver = rows.find((r) => r.workload.prover.name === "risc0")
+    ?.workload.prover.name;
+  const seenScheme = new Set<string>();
+  const cycleData = rows
+    .filter((r) => r.workload.prover.name === cycleProver)
+    .filter((r) => {
+      if (seenScheme.has(r.workload.scheme.name)) return false;
+      seenScheme.add(r.workload.scheme.name);
+      return r.workload.cost.cycles !== null;
+    })
+    .map((r) => ({
+      name: r.workload.scheme.name,
+      cycles: r.workload.cost.cycles as number,
+      family: r.workload.scheme.family,
+    }))
+    .sort((a, b) => a.cycles - b.cycles);
+
   return (
     <Section
       id="in-circuit"
       title="In-circuit results"
       lead="What it costs to verify a signature inside the proof. Cycle counts are deterministic and machine independent. Prover wall-clock, peak memory and proof size are tagged with the machine and never mixed across hardware."
     >
+      {cycleData.length > 1 && cycleProver && (
+        <Panel className="mb-6">
+          <h3 className="mb-1 text-sm font-semibold">
+            Cycles to verify one signature, {cycleProver}
+          </h3>
+          <p className="mb-4 text-xs leading-relaxed text-[var(--color-muted)]">
+            Stock builds, no precompiles on any scheme. Falcon-512 verification
+            is the cheapest here, below classical Ed25519. The classical schemes
+            have precompiles available and the post-quantum ones do not, so an
+            accelerated comparison would look different. That asymmetry is the
+            point.
+          </p>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={cycleData}
+                layout="vertical"
+                margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+              >
+                <CartesianGrid stroke="var(--color-line)" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+                  tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(1)}M`}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={110}
+                  tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--color-panel-2)",
+                    border: "1px solid var(--color-line)",
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}
+                  formatter={(value) => [
+                    `${Number(value).toLocaleString()} cycles`,
+                    "verify",
+                  ]}
+                />
+                <Bar dataKey="cycles" radius={[0, 4, 4, 0]}>
+                  {cycleData.map((d) => (
+                    <Cell key={d.name} fill={FAMILY_COLOR[d.family]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+      )}
+
       {rows.length === 0 ? (
         <NotMeasured what="No in-circuit run has been recorded yet. This section fills in as Phase 2 lands, and stays empty until real proofs have been generated." />
       ) : (

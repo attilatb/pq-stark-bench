@@ -13,6 +13,10 @@ pqb-core = { path = "../../../pqb-core" }
 # and implies the `prove` feature. Neither is in the default set.
 risc0-zkvm = { version = "3.0", features = ["metal"] }
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+# Host-side signing for the post-quantum schemes. Floating point on the host is
+# fine; only the guest must stay integer-only.
+fn-dsa = "0.4.0"
+fips204 = "0.4.6"
 rand_core = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

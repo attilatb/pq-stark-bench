@@ -1,0 +1,37 @@
+[package]
+name = "pqb-sp1-program"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ed25519_verify"
+path = "src/bin/ed25519_verify.rs"
+
+[[bin]]
+name = "falcon512_verify"
+path = "src/bin/falcon512_verify.rs"
+
+[[bin]]
+name = "mldsa44_verify"
+path = "src/bin/mldsa44_verify.rs"
+
+[dependencies]
+sp1-zkvm = "6.0"
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+
+# Stock classical control: portable ed25519-dalek, no SP1 curve25519 precompile.
+ed25519-dalek = { version = "2.1", default-features = false }
+
+# Falcon-512 verification: integer-only, no_std, safe in the soft-float guest.
+fn-dsa-vrfy = { version = "0.4.0", default-features = false }
+
+# ML-DSA-44 (FIPS 204). Stock: no SHAKE precompile reaches it (disclosed).
+fips204 = { version = "0.4.6", default-features = false, features = ["ml-dsa-44"] }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+
+# Isolate this guest from the outer repo workspace.
+[workspace]
