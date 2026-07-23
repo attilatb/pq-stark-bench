@@ -56,6 +56,11 @@ struct SchemeDef {
     conformant: bool,
     elf: &'static [u8],
     image_id: [u32; 8],
+    /// Precompiles this build is expected to use. Empty for stock builds.
+    precompiles: &'static [&'static str],
+    /// For accelerated builds, the cycle count must come in below this to prove
+    /// the precompile actually engaged (assert, do not assume). None for stock.
+    accel_assert_below: Option<u64>,
     /// Extra disclosures beyond the shared ones.
     caveats: &'static [&'static str],
 }
@@ -72,8 +77,27 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             conformant: true,
             elf: methods::ED25519_VERIFY_ELF,
             image_id: methods::ED25519_VERIFY_ID,
+            precompiles: &[],
+            accel_assert_below: None,
+            caveats: &["stock ed25519-dalek: no curve25519 precompile, the honest worst case"],
+        },
+        "ed25519accel" => SchemeDef {
+            name: "ed25519-accel",
+            family: Family::Classical,
+            spec: "RFC 8032 (classical, not post-quantum)",
+            crate_name: "ed25519-dalek + risc0 curve25519-dalek fork",
+            crate_version: "2.1 / curve25519-4.1.3-risczero.0",
+            hash_primitive: "SHA-512",
+            conformant: true,
+            elf: methods::ED25519_ACCEL_VERIFY_ELF,
+            image_id: methods::ED25519_ACCEL_VERIFY_ID,
+            precompiles: &["curve25519"],
+            // Stock ed25519 verify is ~3.24M cycles; the precompile must bring
+            // it well below 2M or it did not engage.
+            accel_assert_below: Some(2_000_000),
             caveats: &[
-                "stock ed25519-dalek: no curve25519 precompile, the honest worst case",
+                "accelerated: curve25519 field arithmetic routed to the RISC Zero precompile",
+                "this is the classical control WITH its precompile, unlike the stock ed25519 row",
             ],
         },
         "falcon512" => SchemeDef {
@@ -86,6 +110,8 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             conformant: true,
             elf: methods::FALCON512_VERIFY_ELF,
             image_id: methods::FALCON512_VERIFY_ID,
+            precompiles: &[],
+            accel_assert_below: None,
             caveats: &[
                 "verification is integer-only; signing is done on the host",
                 "no lattice or NTT precompile on this prover",
@@ -101,19 +127,23 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             conformant: true,
             elf: methods::MLDSA44_VERIFY_ELF,
             image_id: methods::MLDSA44_VERIFY_ID,
+            precompiles: &[],
+            accel_assert_below: None,
             caveats: &[
                 "stock: no SHAKE precompile reaches fips204, so SHAKE runs as plain RISC-V",
                 "no lattice or NTT precompile on this prover",
             ],
         },
-        other => panic!("unknown scheme: {other}. Use ed25519 | falcon512 | mldsa44"),
+        other => {
+            panic!("unknown scheme: {other}. Use ed25519 | ed25519accel | falcon512 | mldsa44")
+        }
     }
 }
 
 /// Build N real signatures for the given scheme, signing on the host.
 fn build_batch(scheme: &str, n: u32) -> GuestBatch {
     match scheme {
-        "ed25519" => build_ed25519(n),
+        "ed25519" | "ed25519accel" => build_ed25519(n),
         "falcon512" => build_falcon512(n),
         "mldsa44" => build_mldsa44(n),
         other => panic!("unknown scheme: {other}"),
@@ -273,6 +303,24 @@ fn main() {
     );
     eprintln!("  user cycles: {user_cycles}, padded cycles: {total_cycles}");
 
+    // Assert the precompile actually engaged, do not assume it. An accelerated
+    // build whose cycle count is not well below the stock threshold means the
+    // patch silently did nothing, which would inflate every downstream chart.
+    let precompile_assert_passed = match def.accel_assert_below {
+        Some(per_sig_threshold) => {
+            // The threshold is per signature, so it scales with the batch size.
+            let per_sig = user_cycles / batch_size.max(1) as u64;
+            assert!(
+                per_sig < per_sig_threshold,
+                "{} declared a precompile but ran {per_sig} cycles per signature, not below \
+                 {per_sig_threshold}: the precompile did not engage",
+                def.name
+            );
+            true
+        }
+        None => false,
+    };
+
     // --- Prove (optional): wall-clock, proof size, peak RAM, verify. ---
     let mut prove_ms = None;
     let mut peak_ram_mb = None;
@@ -313,7 +361,10 @@ fn main() {
 
         let (_n, verified): (u32, u32) = receipt.journal.decode().expect("journal");
         assert_eq!(verified, batch_size, "proof did not verify every signature");
-        eprintln!("  proved that {verified}/{batch_size} {} signatures verify", def.name);
+        eprintln!(
+            "  proved that {verified}/{batch_size} {} signatures verify",
+            def.name
+        );
     }
 
     // --- Assemble and write the results file. ---
@@ -334,9 +385,7 @@ fn main() {
     toolchain.insert("r0vm".to_string(), tool_version("r0vm", &["--version"]));
     toolchain.insert("rustc".to_string(), environment.rustc.clone());
 
-    let mut caveats = vec![
-        "cycle counts are deterministic and machine independent".to_string(),
-    ];
+    let mut caveats = vec!["cycle counts are deterministic and machine independent".to_string()];
     caveats.extend(def.caveats.iter().map(|c| c.to_string()));
     if proving {
         caveats.push(
@@ -375,8 +424,8 @@ fn main() {
                 source: "https://dev.risczero.com/api/security-model, accessed 2026-07-23".into(),
             },
             segment_limit_po2: session.segments.first().map(|s| s.po2),
-            precompiles_used: vec![],
-            precompile_assert_passed: false,
+            precompiles_used: def.precompiles.iter().map(|p| p.to_string()).collect(),
+            precompile_assert_passed,
         },
         batch: Batch {
             n: batch_size,
@@ -421,7 +470,8 @@ fn main() {
     std::fs::create_dir_all(&out_dir).expect("create results dir");
     let out_path = out_dir.join(format!("{run_id}.json"));
     let mut f = std::fs::File::create(&out_path).expect("create results file");
-    f.write_all(file.to_json().as_bytes()).expect("write results");
+    f.write_all(file.to_json().as_bytes())
+        .expect("write results");
 
     eprintln!();
     eprintln!(

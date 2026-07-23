@@ -1,0 +1,76 @@
+{
+  "run_id": "2026-07-23T21-50-17Z-attilas-macbook-pro-3-local-risc0-falcon-512-execute-n16",
+  "kind": "zkvm",
+  "schema_version": 1,
+  "generated_at": "2026-07-23T21:50:17Z",
+  "environment": {
+    "cpu": "Apple M3 Max",
+    "cores": 16,
+    "ram_gb": 64.0,
+    "os": "macOS 26.6",
+    "arch": "aarch64",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "target": "aarch64-apple-darwin",
+    "hardware_class": "local-m3max",
+    "library_versions": {
+      "bench-native": "0.1.0"
+    },
+    "is_ci": false,
+    "frequency_pinned": false
+  },
+  "toolchain": {
+    "cargo-risczero": "cargo-risczero 3.0.6",
+    "r0vm": "risc0-r0vm 3.0.6",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  },
+  "workloads": [
+    {
+      "scheme": {
+        "name": "falcon-512",
+        "family": "lattice",
+        "spec": "NIST selected. FIPS 206 not published as of 2026-07-23.",
+        "crate_name": "fn-dsa-vrfy",
+        "crate_version": "0.4.0",
+        "hash_primitive": "SHAKE-256",
+        "conformant": true,
+        "prerelease": false
+      },
+      "prover": {
+        "name": "risc0",
+        "version": "3.0.6",
+        "isa": "riscv32im",
+        "backend": "none",
+        "proof_mode": "execute",
+        "security_bits": {
+          "value": 96,
+          "kind": "claimed",
+          "source": "https://dev.risczero.com/api/security-model, accessed 2026-07-23"
+        },
+        "segment_limit_po2": 20,
+        "precompiles_used": [],
+        "precompile_assert_passed": false
+      },
+      "batch": {
+        "n": 16,
+        "topology": "flat",
+        "arity": null
+      },
+      "cost": {
+        "cycles": 16758990,
+        "cycles_source": "SessionInfo::cycles",
+        "total_cycles": 17825792,
+        "prove_ms": null,
+        "peak_ram_mb": null,
+        "proof_bytes": null,
+        "verify_ms": null
+      },
+      "status": "ok",
+      "abort_reason": null,
+      "caveats": [
+        "cycle counts are deterministic and machine independent",
+        "verification is integer-only; signing is done on the host",
+        "no lattice or NTT precompile on this prover"
+      ]
+    }
+  ]
+}

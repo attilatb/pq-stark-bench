@@ -136,6 +136,59 @@ export function allZkvmWorkloads(): Array<{
     .flatMap((run) => run.workloads.map((workload) => ({ run, workload })));
 }
 
+export interface BatchPoint {
+  n: number;
+  cycles: number;
+  cyclesPerSig: number;
+}
+
+/**
+ * Batch-size series per (prover, scheme): cycles and cycles-per-signature at
+ * each measured N. Only schemes with more than one batch size appear. Used for
+ * the amortization chart, which shows per-signature cost is roughly flat.
+ */
+export function batchSeries(): Array<{
+  prover: string;
+  isa: string;
+  scheme: string;
+  family: Family;
+  points: BatchPoint[];
+}> {
+  const groups = new Map<
+    string,
+    { prover: string; isa: string; scheme: string; family: Family; byN: Map<number, number> }
+  >();
+
+  for (const { workload: w } of allZkvmWorkloads()) {
+    if (w.cost.cycles === null) continue;
+    const key = `${w.prover.name}::${w.scheme.name}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        prover: w.prover.name,
+        isa: w.prover.isa,
+        scheme: w.scheme.name,
+        family: w.scheme.family,
+        byN: new Map(),
+      });
+    }
+    // Keep the first (newest) value seen for each N.
+    const g = groups.get(key)!;
+    if (!g.byN.has(w.batch.n)) g.byN.set(w.batch.n, w.cost.cycles);
+  }
+
+  return Array.from(groups.values())
+    .map((g) => ({
+      prover: g.prover,
+      isa: g.isa,
+      scheme: g.scheme,
+      family: g.family,
+      points: Array.from(g.byN.entries())
+        .map(([n, cycles]) => ({ n, cycles, cyclesPerSig: Math.round(cycles / n) }))
+        .sort((a, b) => a.n - b.n),
+    }))
+    .filter((s) => s.points.length > 1);
+}
+
 /** The most recent native run, or null when nothing has been measured yet. */
 export function latestNativeRun(): ResultsFile | null {
   if (nativeRuns.length === 0) return null;

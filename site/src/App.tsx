@@ -3,6 +3,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -13,6 +16,7 @@ import {
   FAMILY_COLOR,
   SCHEME_SPECS,
   allZkvmWorkloads,
+  batchSeries,
   formatBytes,
   formatNs,
   hasNativeData,
@@ -442,15 +446,17 @@ function InCircuit() {
     ).values()
   );
 
+  // Pin the cross-scheme comparison to N=1 so every bar is the same batch size.
   const cycleCharts = provers
     .map((p) => {
       const seen = new Set<string>();
       const data = rows
         .filter((r) => r.workload.prover.name === p.name)
+        .filter((r) => r.workload.batch.n === 1 && r.workload.cost.cycles !== null)
         .filter((r) => {
           if (seen.has(r.workload.scheme.name)) return false;
           seen.add(r.workload.scheme.name);
-          return r.workload.cost.cycles !== null;
+          return true;
         })
         .map((r) => ({
           name: r.workload.scheme.name,
@@ -461,6 +467,34 @@ function InCircuit() {
       return { ...p, data };
     })
     .filter((c) => c.data.length > 1);
+
+  // Amortization: cycles per signature vs batch size. Prior art says this is
+  // flat, only proof bytes amortize. This shows it on our own numbers.
+  const amort = batchSeries().filter((s) => s.prover === "risc0");
+  const amortSchemes = Array.from(new Set(amort.map((s) => s.scheme)));
+  const amortNs = Array.from(
+    new Set(amort.flatMap((s) => s.points.map((p) => p.n)))
+  ).sort((a, b) => a - b);
+  const amortData = amortNs.map((n) => {
+    const row: Record<string, number> = { n };
+    for (const s of amort) {
+      const pt = s.points.find((p) => p.n === n);
+      if (pt) row[s.scheme] = pt.cyclesPerSig;
+    }
+    return row;
+  });
+  // Distinct colors per scheme (family colors would collide between the two
+  // classical and the two lattice schemes).
+  const AMORT_PALETTE = [
+    "var(--color-accent)",
+    "var(--color-pq)",
+    "var(--color-hash)",
+    "#5ad19a",
+    "#e57ec0",
+    "#c9d14d",
+  ];
+  const amortColor = (scheme: string): string =>
+    AMORT_PALETTE[amortSchemes.indexOf(scheme) % AMORT_PALETTE.length];
 
   return (
     <Section
@@ -492,6 +526,82 @@ function InCircuit() {
         </>
       )}
 
+      {amortData.length > 1 && amortSchemes.length > 0 && (
+        <Panel className="mb-6">
+          <h3 className="mb-1 text-sm font-semibold">
+            Cycles per signature vs batch size, risc0
+          </h3>
+          <p className="mb-4 max-w-3xl text-xs leading-relaxed text-[var(--color-muted)]">
+            Per-signature cost is flat as the batch grows: proving N signatures
+            costs about N times proving one. This is expected and already known
+            from prior work, so it is shown here as confirmation, not a finding.
+            Only the proof size amortizes with batch size, not the prover work.
+          </p>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={amortData}
+                margin={{ top: 8, right: 16, bottom: 16, left: 8 }}
+              >
+                <CartesianGrid stroke="var(--color-line)" />
+                <XAxis
+                  dataKey="n"
+                  type="number"
+                  scale="log"
+                  domain={["dataMin", "dataMax"]}
+                  ticks={amortNs}
+                  tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+                  label={{
+                    value: "batch size N (log)",
+                    position: "insideBottom",
+                    offset: -8,
+                    fill: "var(--color-muted)",
+                    fontSize: 11,
+                  }}
+                />
+                <YAxis
+                  domain={[0, "dataMax"]}
+                  tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+                  tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(1)}M`}
+                  label={{
+                    value: "cycles / signature",
+                    angle: -90,
+                    position: "insideLeft",
+                    fill: "var(--color-muted)",
+                    fontSize: 11,
+                  }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--color-panel-2)",
+                    border: "1px solid var(--color-line)",
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}
+                  formatter={(value, name) => [
+                    `${Number(value).toLocaleString()} /sig`,
+                    name as string,
+                  ]}
+                  labelFormatter={(l) => `N = ${l}`}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {amortSchemes.map((s) => (
+                  <Line
+                    key={s}
+                    type="monotone"
+                    dataKey={s}
+                    stroke={amortColor(s)}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+      )}
+
       {rows.length === 0 ? (
         <NotMeasured what="No in-circuit run has been recorded yet. This section fills in as Phase 2 lands, and stays empty until real proofs have been generated." />
       ) : (
@@ -512,7 +622,12 @@ function InCircuit() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ workload: w }, i) => (
+                {rows
+                  .filter(
+                    ({ workload: w }) =>
+                      w.batch.n === 1 || w.prover.proof_mode !== "execute"
+                  )
+                  .map(({ workload: w }, i) => (
                   <tr
                     key={i}
                     className="border-b border-[var(--color-line)]/60 last:border-0"
@@ -578,7 +693,12 @@ function InCircuit() {
         <Panel className="mt-6">
           <h3 className="mb-3 text-sm font-semibold">Disclosures, per row</h3>
           <ul className="space-y-3 text-xs leading-relaxed">
-            {rows.map(({ workload: w }, i) => (
+            {rows
+              .filter(
+                ({ workload: w }) =>
+                  w.batch.n === 1 || w.prover.proof_mode !== "execute"
+              )
+              .map(({ workload: w }, i) => (
               <li key={i}>
                 <span className="text-[var(--color-fg)]">
                   {w.scheme.name} on {w.prover.name}, N={w.batch.n}

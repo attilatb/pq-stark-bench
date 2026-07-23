@@ -75,9 +75,33 @@ than an interpolation.
 | Phase | State |
 |---|---|
 | 1. Native benchmarks | Ed25519 and ECDSA secp256k1 measured. Post-quantum schemes in progress. |
-| 2. In-circuit benchmarks (RISC Zero and SP1) | Not started. Feasibility verified. |
+| 2. In-circuit benchmarks (RISC Zero and SP1) | Cycle counts measured for Ed25519, Falcon-512 and ML-DSA-44 on both provers, across batch sizes. One full RISC Zero proof. Wall-clock comparison pending the x86 run. |
 | 3. Dashboard | Live, rendering real measurements. |
 | 4. Reference design | Not started. |
+
+### Measured so far, in-circuit
+
+Cycles to verify one signature, N=1, stock unless noted, Apple M3 Max:
+
+| scheme | RISC Zero (RV32IM) | SP1 (RV64IM) |
+| --- | --- | --- |
+| falcon-512 | 1,055,318 | 552,817 |
+| ed25519 | 3,244,248 | 791,791 |
+| ml-dsa-44 | 4,029,079 | 1,788,262 |
+| ed25519, curve25519 precompile | 886,721 | not yet measured |
+
+Both provers agree on the ordering. Two findings worth stating plainly, both
+measured, neither a discovery:
+
+- Unaccelerated, Falcon-512 verification is cheaper in-circuit than Ed25519.
+  The precompile is what flips it: with the RISC Zero curve25519 accelerator,
+  Ed25519 drops to 886,721 cycles, a 3.66x reduction, and lands below Falcon.
+  That is the precompile asymmetry made concrete, and the harness asserts the
+  precompile actually engaged rather than assuming it.
+- Per-signature cycle cost is flat across batch sizes 1 to 16 for every scheme
+  (for example ML-DSA-44 stays within 0.1 percent of 4.03M cycles per
+  signature). Only proof size amortizes. This confirms prior work on our own
+  numbers.
 
 Anything not yet measured renders as "not yet measured". No figure on the site
 or in this repository is estimated, extrapolated, or copied from a reference
