@@ -1,0 +1,24 @@
+[package]
+name = "pqb-risc0-host"
+version = "0.1.0"
+edition = "2021"
+description = "Drives the RISC Zero prover for signature verification and writes zkVM results files"
+
+[dependencies]
+pqb-risc0-methods = { path = "../methods" }
+pqb-zkvm-common = { path = "../../common" }
+tx-format = { path = "../../../tx-format" }
+pqb-core = { path = "../../../pqb-core" }
+# The `metal` feature enables local GPU-accelerated proving on Apple Silicon
+# and implies the `prove` feature. Neither is in the default set.
+risc0-zkvm = { version = "3.0", features = ["metal"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand_core = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+libc = "0.2"
+
+[[bin]]
+name = "risc0-bench"
+path = "src/main.rs"

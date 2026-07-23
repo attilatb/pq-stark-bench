@@ -20,3 +20,6 @@ netlify.toml.local
 
 # Generated at build time by site/scripts/collect-results.mjs
 site/src/generated/
+
+# zkVM lane build artifacts (lockfiles ARE committed, for reproducibility)
+crates/bench-zkvm/**/target

@@ -1,0 +1,11 @@
+[package]
+name = "pqb-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared environment capture, timing harness, and results plumbing for PQ-STARK-BENCH"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

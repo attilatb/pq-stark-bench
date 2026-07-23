@@ -4,11 +4,11 @@
 //! different hardware classes are never combined into a single chart, so the
 //! `hardware_class` field is load-bearing rather than decorative.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::process::Command;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Environment {
     pub cpu: String,
     pub cores: usize,

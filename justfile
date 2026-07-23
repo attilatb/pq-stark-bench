@@ -12,10 +12,14 @@ bench-native:
 bench-native-quick:
     cargo run --release -p bench-native -- --quick
 
-# In-circuit benchmarks. Phase 2, not implemented yet.
-bench-zkvm:
-    @echo "Phase 2 is not implemented yet. See docs/METHODOLOGY.md."
-    @exit 1
+# In-circuit benchmarks. Requires the RISC Zero toolchain (rzup) on PATH.
+# The batch size N defaults to 1.
+bench-zkvm-risc0 n="1":
+    cd crates/bench-zkvm/risc0 && cargo run --release -p pqb-risc0-host -- {{n}}
+
+# Cycle counts only, no proving. Deterministic and safe to run in CI.
+bench-zkvm-risc0-cycles n="1":
+    cd crates/bench-zkvm/risc0 && RISC0_DEV_MODE=1 cargo run --release -p pqb-risc0-host -- {{n}}
 
 test:
     cargo test --workspace

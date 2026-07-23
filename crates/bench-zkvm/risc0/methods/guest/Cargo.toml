@@ -1,0 +1,26 @@
+[package]
+name = "pqb-guest-ed25519"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ed25519_verify"
+path = "src/ed25519_verify.rs"
+
+[dependencies]
+risc0-zkvm = { version = "3.0", default-features = false, features = ["std"] }
+# Stock ed25519-dalek: the portable backend, no prover-specific accelerator.
+# This is the honest worst case for the classical control. An accelerated
+# variant is added separately so the delta (the value of the curve25519
+# precompile) is itself a published number.
+ed25519-dalek = { version = "2.1", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+
+# Isolate this guest from the outer repo workspace: it builds for the RISC Zero
+# guest target with its own pinned toolchain.
+[workspace]

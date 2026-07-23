@@ -1,0 +1,11 @@
+# Isolated workspace for the RISC Zero lane.
+#
+# Kept separate from the repo root workspace because the guest builds for the
+# RISC Zero riscv32im target with a pinned toolchain (risc0 rust 1.97.0). The
+# guest under methods/guest is isolated again by its own empty [workspace].
+[workspace]
+resolver = "2"
+members = ["host", "methods"]
+
+[profile.release]
+opt-level = 3

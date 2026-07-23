@@ -58,10 +58,66 @@ export interface ResultsFile {
   _file: string;
 }
 
+// ---- zkVM (in-circuit) results ----
+
+export interface ZkvmScheme {
+  name: string;
+  family: Family;
+  spec: string;
+  crate_name: string;
+  crate_version: string;
+  hash_primitive: string;
+  conformant: boolean;
+  prerelease: boolean;
+}
+
+export interface ZkvmProver {
+  name: string;
+  version: string;
+  isa: string;
+  backend: string;
+  proof_mode: string;
+  security_bits: { value: number | null; kind: string; source: string };
+  segment_limit_po2: number | null;
+  precompiles_used: string[];
+  precompile_assert_passed: boolean;
+}
+
+export interface ZkvmCost {
+  cycles: number | null;
+  cycles_source: string | null;
+  total_cycles: number | null;
+  prove_ms: number | null;
+  peak_ram_mb: number | null;
+  proof_bytes: number | null;
+  verify_ms: number | null;
+}
+
+export interface ZkvmWorkload {
+  scheme: ZkvmScheme;
+  prover: ZkvmProver;
+  batch: { n: number; topology: string; arity: number | null };
+  cost: ZkvmCost;
+  status: string;
+  abort_reason: string | null;
+  caveats: string[];
+}
+
+export interface ZkvmResultsFile {
+  run_id: string;
+  kind: string;
+  schema_version: number;
+  generated_at: string;
+  environment: Environment;
+  toolchain: Record<string, string>;
+  workloads: ZkvmWorkload[];
+  _file: string;
+}
+
 interface Payload {
   collected_at: string;
   native: ResultsFile[];
-  zkvm: ResultsFile[];
+  zkvm: ZkvmResultsFile[];
 }
 
 const data = payload as unknown as Payload;
@@ -69,6 +125,16 @@ const data = payload as unknown as Payload;
 export const collectedAt = data.collected_at;
 export const nativeRuns = data.native ?? [];
 export const zkvmRuns = data.zkvm ?? [];
+
+/** All zkVM workloads across every run, flattened, newest run first. */
+export function allZkvmWorkloads(): Array<{
+  run: ZkvmResultsFile;
+  workload: ZkvmWorkload;
+}> {
+  return [...zkvmRuns]
+    .sort((a, b) => (a.generated_at < b.generated_at ? 1 : -1))
+    .flatMap((run) => run.workloads.map((workload) => ({ run, workload })));
+}
 
 /** The most recent native run, or null when nothing has been measured yet. */
 export function latestNativeRun(): ResultsFile | null {

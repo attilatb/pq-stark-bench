@@ -7,12 +7,12 @@
 //! conventions expect and which does not interpolate values that were never
 //! measured.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 /// Summary of one timed measurement.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Timing {
     pub median_ns: u64,
     pub p95_ns: u64,

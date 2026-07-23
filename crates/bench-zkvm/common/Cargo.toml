@@ -1,0 +1,13 @@
+[package]
+name = "pqb-zkvm-common"
+version = "0.1.0"
+edition = "2021"
+description = "Shared zkVM results schema and writer for the RISC Zero and SP1 lanes"
+
+[dependencies]
+pqb-core = { path = "../../pqb-core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Own workspace so both the risc0 and sp1 lanes can depend on it by path.
+[workspace]

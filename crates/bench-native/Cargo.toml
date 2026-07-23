@@ -8,6 +8,7 @@ description = "Native (non-circuit) signature benchmarks for PQ-STARK-BENCH"
 
 [dependencies]
 tx-format = { path = "../tx-format" }
+pqb-core = { path = "../pqb-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }

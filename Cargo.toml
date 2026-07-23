@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["crates/tx-format", "crates/bench-native"]
+members = ["crates/tx-format", "crates/pqb-core", "crates/bench-native"]
+# The zkVM crates build for riscv guest targets with their own pinned
+# toolchains (RISC Zero rust 1.97.0, SP1 succinct), so they are deliberately
+# not workspace members. Each is its own isolated workspace.
+exclude = ["crates/bench-zkvm"]
 
 [workspace.package]
 version = "0.1.0"

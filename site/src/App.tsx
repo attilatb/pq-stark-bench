@@ -11,16 +11,17 @@ import {
 import {
   FAMILY_COLOR,
   SCHEME_SPECS,
+  allZkvmWorkloads,
   formatBytes,
   formatNs,
   hasNativeData,
   latestNativeRun,
   nativeRow,
-  zkvmRuns,
 } from "./data";
 import { Section, Panel, NotMeasured, Stat, Pill } from "./components";
 
 const run = latestNativeRun();
+const inCircuitCount = allZkvmWorkloads().length;
 
 function Hero() {
   return (
@@ -48,7 +49,11 @@ function Hero() {
           />
           <Stat
             label="In-circuit measurements"
-            value={zkvmRuns.length > 0 ? `${zkvmRuns.length} runs` : "not yet measured"}
+            value={
+              inCircuitCount > 0
+                ? `${inCircuitCount} workload${inCircuitCount === 1 ? "" : "s"}`
+                : "not yet measured"
+            }
             sub="RISC Zero and SP1"
           />
           <Stat
@@ -362,19 +367,118 @@ function NativePerformance() {
 }
 
 function InCircuit() {
+  const rows = allZkvmWorkloads();
+
   return (
     <Section
       id="in-circuit"
       title="In-circuit results"
-      lead="Prover wall-clock, peak memory and proof size for signature verification inside RISC Zero and SP1, swept across batch size. This is the part nobody has published for the standardized schemes."
+      lead="What it costs to verify a signature inside the proof. Cycle counts are deterministic and machine independent. Prover wall-clock, peak memory and proof size are tagged with the machine and never mixed across hardware."
     >
-      {zkvmRuns.length === 0 ? (
+      {rows.length === 0 ? (
         <NotMeasured what="No in-circuit run has been recorded yet. This section fills in as Phase 2 lands, and stays empty until real proofs have been generated." />
       ) : (
         <Panel>
-          <p className="text-xs text-[var(--color-muted)]">
-            {zkvmRuns.length} run(s) recorded.
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-left text-xs">
+              <thead className="text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-line)]">
+                  <th className="py-2 pr-4 font-medium">Scheme</th>
+                  <th className="py-2 pr-4 font-medium">Prover</th>
+                  <th className="py-2 pr-4 font-medium">Mode</th>
+                  <th className="py-2 pr-4 text-right font-medium">Batch</th>
+                  <th className="py-2 pr-4 text-right font-medium">Cycles</th>
+                  <th className="py-2 pr-4 text-right font-medium">Prove</th>
+                  <th className="py-2 pr-4 text-right font-medium">Verify</th>
+                  <th className="py-2 pr-4 text-right font-medium">Proof</th>
+                  <th className="py-2 text-right font-medium">Peak RAM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ workload: w }, i) => (
+                  <tr
+                    key={i}
+                    className="border-b border-[var(--color-line)]/60 last:border-0"
+                  >
+                    <td className="py-2.5 pr-4">
+                      <span
+                        className="mr-2 inline-block h-2 w-2 rounded-full align-middle"
+                        style={{ background: FAMILY_COLOR[w.scheme.family] }}
+                      />
+                      {w.scheme.name}
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      {w.prover.name} {w.prover.version}
+                      <span className="ml-1 text-[var(--color-muted)]">
+                        ({w.prover.isa}, {w.prover.backend})
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-4 text-[var(--color-muted)]">
+                      {w.prover.proof_mode}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums">
+                      {w.batch.n}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums">
+                      {w.cost.cycles === null
+                        ? "not measured"
+                        : w.cost.cycles.toLocaleString()}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums">
+                      {w.cost.prove_ms === null
+                        ? "not measured"
+                        : `${(w.cost.prove_ms / 1000).toFixed(2)} s`}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums">
+                      {w.cost.verify_ms === null
+                        ? "not measured"
+                        : `${w.cost.verify_ms.toFixed(1)} ms`}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums">
+                      {w.cost.proof_bytes === null
+                        ? "not measured"
+                        : formatBytes(w.cost.proof_bytes)}
+                    </td>
+                    <td className="py-2.5 text-right tabular-nums">
+                      {w.cost.peak_ram_mb === null
+                        ? "not measured"
+                        : `${Math.round(w.cost.peak_ram_mb)} MB`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-4 text-xs text-[var(--color-muted)]">
+            Cycle counts are per prover and are not comparable across the
+            RISC Zero and SP1 columns. Each row carries its own disclosures
+            below.
           </p>
+        </Panel>
+      )}
+
+      {rows.length > 0 && (
+        <Panel className="mt-6">
+          <h3 className="mb-3 text-sm font-semibold">Disclosures, per row</h3>
+          <ul className="space-y-3 text-xs leading-relaxed">
+            {rows.map(({ workload: w }, i) => (
+              <li key={i}>
+                <span className="text-[var(--color-fg)]">
+                  {w.scheme.name} on {w.prover.name}, N={w.batch.n}
+                </span>
+                <span className="text-[var(--color-muted)]">
+                  {" "}
+                  (security {w.prover.security_bits.value ?? "?"}-bit,{" "}
+                  {w.prover.security_bits.kind})
+                </span>
+                <ul className="mt-1 list-disc pl-5 text-[var(--color-muted)]">
+                  {w.caveats.map((c, j) => (
+                    <li key={j}>{c}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
         </Panel>
       )}
 

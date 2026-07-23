@@ -7,7 +7,7 @@
 //! signing preimage from `tx-format`, so the message being signed is identical
 //! across schemes and the comparison is like-for-like.
 
-use crate::stats::{measure_bounded, Timing};
+use pqb_core::stats::{measure_bounded, Timing};
 use serde::Serialize;
 use std::time::Duration;
 
