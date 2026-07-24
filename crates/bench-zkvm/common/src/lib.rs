@@ -80,6 +80,11 @@ pub struct Prover {
     pub segment_limit_po2: Option<u32>,
     /// Precompiles the guest actually invoked, by name.
     pub precompiles_used: Vec<String>,
+    /// Measured invocation count per precompile syscall, so the assertion is
+    /// traceable to a number rather than only a pass/fail boolean. Empty for
+    /// builds that use no precompile. Defaulted so older result files parse.
+    #[serde(default)]
+    pub precompile_calls: std::collections::BTreeMap<String, u64>,
     /// True when an accelerated build was asserted to actually use its
     /// precompile. Meaningless (and false) for a stock build.
     pub precompile_assert_passed: bool,
@@ -195,6 +200,7 @@ mod tests {
                 },
                 segment_limit_po2: Some(20),
                 precompiles_used: vec![],
+                precompile_calls: std::collections::BTreeMap::new(),
                 precompile_assert_passed: false,
             },
             batch: Batch {

@@ -404,6 +404,16 @@ fn main() {
             },
             segment_limit_po2: None,
             precompiles_used: def.precompiles.iter().map(|p| p.to_string()).collect(),
+            precompile_calls: {
+                let mut m = BTreeMap::new();
+                if keccak_calls > 0 {
+                    m.insert("keccak_permute".to_string(), keccak_calls);
+                }
+                if sha256_calls > 0 {
+                    m.insert("sha256_extend".to_string(), sha256_calls);
+                }
+                m
+            },
             precompile_assert_passed,
         },
         batch: Batch {

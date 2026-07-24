@@ -462,6 +462,10 @@ fn main() {
             },
             segment_limit_po2: session.segments.first().map(|s| s.po2),
             precompiles_used: def.precompiles.iter().map(|p| p.to_string()).collect(),
+            // RISC Zero's executor does not expose a per-precompile syscall
+            // count the way SP1's ExecutionReport does; the curve25519
+            // accelerator is asserted via the cycle threshold instead.
+            precompile_calls: std::collections::BTreeMap::new(),
             precompile_assert_passed,
         },
         batch: Batch {

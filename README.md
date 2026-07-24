@@ -111,13 +111,16 @@ measured, none a discovery:
 
   | scheme | stock cycles | accelerated | speedup | why |
   | --- | --- | --- | --- | --- |
-  | SLH-DSA-128s | 17,999,691 | 3,850,882 | 5.08x | hash-based; SHA-256 via the sha2 crate routes cleanly |
-  | ML-DSA-44 | 1,788,262 | 1,017,575 | 1.76x | SHAKE accelerates; the lattice NTT does not |
+  | SLH-DSA-128s | 20,370,320 | 3,927,475 | ~5x | hash-based; SHA-256 via the sha2 crate routes cleanly |
+  | ML-DSA-44 | 1,788,082 | 1,013,890 | 1.76x | SHAKE accelerates; the lattice NTT does not |
   | Falcon-512 | 1,055,318 | not reachable | none | vendors its own SHAKE, so no patch reaches it |
 
-  All accelerated runs assert the precompile actually fired at runtime (129
-  Keccak calls for ML-DSA, 4,148 SHA-256 calls for SLH-DSA, not zero) rather
-  than assuming the patch routed. Two structural findings fall out:
+  All accelerated runs record and assert the precompile call count at runtime
+  (129 Keccak calls for ML-DSA, 4,238 SHA-256 calls for SLH-DSA, not zero)
+  rather than assuming the patch routed. The stock and accelerated figures are
+  separate runs with fresh keypairs, so SLH-DSA cycle counts and its speedup
+  vary a few percent between runs (roughly 4.6x to 5.2x). Two structural
+  findings fall out:
   - The NTT is the wall. ML-DSA's hashing speeds up but its lattice math has no
     accelerator on any general-purpose prover, so that is the remaining
     bottleneck, and it is a research problem, not a patch.
