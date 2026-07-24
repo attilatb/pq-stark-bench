@@ -27,3 +27,115 @@ body {
 ::selection {
   background: rgba(77, 163, 255, 0.28);
 }
+
+/* Technical-note prose, rendered from markdown. Dark research-lab theme. */
+.note-prose {
+  color: var(--color-fg);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.note-prose h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.75rem;
+  line-height: 1.25;
+}
+.note-prose h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 2.25rem 0 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-line);
+}
+.note-prose h3 {
+  font-size: 1.02rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+.note-prose p {
+  margin: 0.75rem 0;
+  color: var(--color-fg);
+}
+.note-prose strong {
+  color: #fff;
+  font-weight: 600;
+}
+.note-prose a {
+  color: var(--color-accent);
+  text-decoration: none;
+  word-break: break-word;
+}
+.note-prose a:hover {
+  text-decoration: underline;
+}
+.note-prose ul,
+.note-prose ol {
+  margin: 0.75rem 0;
+  padding-left: 1.4rem;
+}
+.note-prose li {
+  margin: 0.35rem 0;
+}
+.note-prose li::marker {
+  color: var(--color-muted);
+}
+.note-prose hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 2rem 0;
+}
+.note-prose code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.note-prose pre {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+.note-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.note-prose blockquote {
+  border-left: 3px solid var(--color-line);
+  margin: 1rem 0;
+  padding: 0.25rem 0 0.25rem 1rem;
+  color: var(--color-muted);
+}
+/* Tables: horizontal scroll on small screens, never overflow the page. */
+.note-prose table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+.note-prose thead th {
+  text-align: left;
+  color: var(--color-muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.5rem 0.85rem;
+  white-space: nowrap;
+}
+.note-prose tbody td {
+  border-bottom: 1px solid rgba(30, 40, 57, 0.6);
+  padding: 0.5rem 0.85rem;
+  vertical-align: top;
+}
+.note-prose tbody tr:last-child td {
+  border-bottom: none;
+}

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "collect": "node scripts/collect-results.mjs",
+    "collect": "node scripts/collect-results.mjs && node scripts/build-note.mjs",
     "dev": "npm run collect && vite",
     "build": "npm run collect && tsc -b && vite build",
     "preview": "vite preview"
@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
+    "markdown-it": "^14.1.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",

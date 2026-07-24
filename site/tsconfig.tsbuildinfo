@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/components.tsx","./src/data.ts","./src/main.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/nav.tsx","./src/notepage.tsx","./src/components.tsx","./src/data.ts","./src/main.tsx","./src/generated/note.ts"],"version":"5.9.3"}

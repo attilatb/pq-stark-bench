@@ -997,7 +997,7 @@ function Footer() {
 
 export default function App() {
   return (
-    <div className="min-h-screen">
+    <>
       <Hero />
       <main className="mx-auto max-w-6xl px-5">
         <SignatureSizes />
@@ -1008,6 +1008,6 @@ export default function App() {
         <Limitations />
       </main>
       <Footer />
-    </div>
+    </>
   );
 }
