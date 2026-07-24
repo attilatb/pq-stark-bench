@@ -11,18 +11,6 @@ export default function NotePage() {
         className="note-prose"
         dangerouslySetInnerHTML={{ __html: noteHtml }}
       />
-      <div className="mt-12 border-t border-[var(--color-line)] pt-6 text-xs text-[var(--color-muted)]">
-        This note is generated from{" "}
-        <a
-          href="https://github.com/attilatb/pq-stark-bench/blob/main/docs/TECHNICAL-NOTE.md"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[var(--color-accent)] hover:underline"
-        >
-          docs/TECHNICAL-NOTE.md
-        </a>{" "}
-        and stays in sync with the repository on every deploy.
-      </div>
     </div>
   );
 }

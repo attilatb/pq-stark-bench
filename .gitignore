@@ -23,3 +23,6 @@ site/src/generated/
 
 # zkVM lane build artifacts (lockfiles ARE committed, for reproducibility)
 crates/bench-zkvm/**/target
+
+# TS incremental build info
+site/**/*.tsbuildinfo
