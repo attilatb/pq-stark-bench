@@ -35,6 +35,7 @@ fn elf_for(scheme: &str) -> Elf {
         "mldsa44" => include_elf!("mldsa44_verify"),
         "mldsa44accel" => include_elf!("mldsa44_accel_verify"),
         "slhdsa128s" => include_elf!("slhdsa128s_verify"),
+        "slhdsa128saccel" => include_elf!("slhdsa128s_accel_verify"),
         other => panic!("unknown scheme: {other}"),
     }
 }
@@ -64,10 +65,19 @@ struct SchemeDef {
     hash_primitive: &'static str,
     /// Precompiles this build is expected to use. Empty for stock builds.
     precompiles: &'static [&'static str],
-    /// True when this build must fire the Keccak precompile at least once, so
-    /// the host can assert the accelerator actually engaged rather than assume.
-    expect_keccak: bool,
+    /// Which precompile syscall this build must fire at least once, so the host
+    /// can assert the accelerator actually engaged rather than assume it. None
+    /// for stock builds.
+    expect_precompile: Option<ExpectPrecompile>,
     caveats: &'static [&'static str],
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ExpectPrecompile {
+    /// Keccak-f[1600], used by SHAKE-256 (ML-DSA, Falcon).
+    Keccak,
+    /// SHA-256 extend/compress (SLH-DSA-SHA2).
+    Sha256,
 }
 
 fn scheme_def(scheme: &str) -> SchemeDef {
@@ -80,7 +90,7 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_version: "2.1",
             hash_primitive: "SHA-512",
             precompiles: &[],
-            expect_keccak: false,
+            expect_precompile: None,
             caveats: &["stock ed25519-dalek: no curve25519 precompile, the honest worst case"],
         },
         "falcon512" => SchemeDef {
@@ -91,7 +101,7 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_version: "0.4.0",
             hash_primitive: "SHAKE-256",
             precompiles: &[],
-            expect_keccak: false,
+            expect_precompile: None,
             caveats: &[
                 "verification is integer-only; signing is done on the host",
                 "no lattice or NTT precompile on this prover",
@@ -105,7 +115,7 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_version: "0.4.6",
             hash_primitive: "SHAKE-256",
             precompiles: &[],
-            expect_keccak: false,
+            expect_precompile: None,
             caveats: &[
                 "stock: no SHAKE precompile reaches fips204, so SHAKE runs as plain RISC-V",
                 "no lattice or NTT precompile on this prover",
@@ -119,7 +129,7 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_version: "0.4.6 / patch-sha3-0.10.8-sp1-6.2.0",
             hash_primitive: "SHAKE-256",
             precompiles: &["keccak"],
-            expect_keccak: true,
+            expect_precompile: Some(ExpectPrecompile::Keccak),
             caveats: &[
                 "accelerated: fips204 SHAKE-256 routed to SP1's KECCAK_PERMUTE precompile",
                 "only the hashing is accelerated; the lattice NTT still runs as plain RISC-V",
@@ -133,13 +143,27 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_version: "0.4.1",
             hash_primitive: "SHA-256",
             precompiles: &[],
-            expect_keccak: false,
+            expect_precompile: None,
             caveats: &[
                 "stock: no SHA-256 precompile is routed to fips205, so it runs as plain RISC-V",
                 "hash-based: verification is dominated by SHA-256",
             ],
         },
-        other => panic!("unknown scheme: {other}. Use ed25519 | falcon512 | mldsa44 | mldsa44accel | slhdsa128s"),
+        "slhdsa128saccel" => SchemeDef {
+            name: "slh-dsa-sha2-128s-accel",
+            family: Family::Hash,
+            spec: "NIST FIPS 205",
+            crate_name: "fips205 + sp1-patches sha2",
+            crate_version: "0.4.1 / patch-sha2-0.10.9-sp1-6.2.0",
+            hash_primitive: "SHA-256",
+            precompiles: &["sha256"],
+            expect_precompile: Some(ExpectPrecompile::Sha256),
+            caveats: &[
+                "accelerated: fips205 SHA-256 routed to SP1's SHA_EXTEND/SHA_COMPRESS precompile",
+                "hash-based scheme: verification is almost entirely SHA-256, so most of it accelerates",
+            ],
+        },
+        other => panic!("unknown scheme: {other}. Use ed25519 | falcon512 | mldsa44 | mldsa44accel | slhdsa128s | slhdsa128saccel"),
     }
 }
 
@@ -148,7 +172,7 @@ fn build_batch(scheme: &str, n: u32) -> GuestBatch {
         "ed25519" => build_ed25519(n),
         "falcon512" => build_falcon512(n),
         "mldsa44" | "mldsa44accel" => build_mldsa44(n),
-        "slhdsa128s" => build_slhdsa128s(n),
+        "slhdsa128s" | "slhdsa128saccel" => build_slhdsa128s(n),
         other => panic!("unknown scheme: {other}"),
     }
 }
@@ -290,19 +314,32 @@ fn main() {
     let cycles = report.total_instruction_count();
     eprintln!("  instruction count (cycles): {cycles}");
 
-    // Assert the Keccak precompile actually fired for accelerated builds, do
-    // not assume it. A patched sha3 that silently failed to route would leave
-    // this count at zero and quietly inflate the number.
-    let keccak_calls = report.syscall_counts[sp1_core_executor::SyscallCode::KECCAK_PERMUTE];
-    eprintln!("  KECCAK_PERMUTE precompile calls: {keccak_calls}");
-    if def.expect_keccak {
-        assert!(
-            keccak_calls > 0,
-            "{} declared the Keccak precompile but fired it 0 times: the patch did not route",
-            def.name
-        );
-    }
-    let precompile_assert_passed = def.expect_keccak && keccak_calls > 0;
+    // Assert the expected precompile actually fired for accelerated builds, do
+    // not assume it. A patch that silently failed to route would leave this
+    // count at zero and quietly inflate the number.
+    use sp1_core_executor::SyscallCode;
+    let keccak_calls = report.syscall_counts[SyscallCode::KECCAK_PERMUTE];
+    let sha256_calls = report.syscall_counts[SyscallCode::SHA_EXTEND];
+    eprintln!("  precompile calls: KECCAK_PERMUTE={keccak_calls}, SHA_EXTEND={sha256_calls}");
+    let precompile_assert_passed = match def.expect_precompile {
+        Some(ExpectPrecompile::Keccak) => {
+            assert!(
+                keccak_calls > 0,
+                "{} declared the Keccak precompile but fired it 0 times: the patch did not route",
+                def.name
+            );
+            true
+        }
+        Some(ExpectPrecompile::Sha256) => {
+            assert!(
+                sha256_calls > 0,
+                "{} declared the SHA-256 precompile but fired it 0 times: the patch did not route",
+                def.name
+            );
+            true
+        }
+        None => false,
+    };
 
     // Read the committed values back in the order the guest committed them.
     let mut pv = public_values;

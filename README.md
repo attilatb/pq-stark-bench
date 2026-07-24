@@ -103,16 +103,29 @@ measured, none a discovery:
   either lattice scheme, roughly 5x ML-DSA-44 and 20x accelerated Ed25519,
   because its verification is dominated by a large number of SHA-256
   invocations. That is the honest cost of the conservative hash-based option.
-- Routing ML-DSA-44's SHAKE-256 hashing into the Keccak accelerator that SP1
-  already ships makes verification 1.76x cheaper (1,788,262 to 1,017,575
-  cycles), with the accelerator's use asserted at runtime (129 Keccak
-  precompile calls, not zero). This is the first published measurement of the
-  Keccak-precompile effect for a FIPS post-quantum signature, and it exposes a
-  concrete gap: only SP1's Keccak accelerator reaches the FIPS crates out of
-  the box (RISC Zero's lives in a different crate, tiny-keccak, that fips204
-  does not use), and only the hashing accelerates. The lattice NTT still runs
-  as plain RISC-V on every general-purpose prover, so it is the remaining
-  bottleneck.
+- Routing the FIPS post-quantum signatures' hashing into the accelerators SP1
+  already ships is the first published measurement of that effect, and it
+  forms a clean pattern. How much a scheme accelerates depends on how much of
+  its work is hashing versus lattice math, and on whether its Rust
+  implementation routes hashing through a patchable crate:
+
+  | scheme | stock cycles | accelerated | speedup | why |
+  | --- | --- | --- | --- | --- |
+  | SLH-DSA-128s | 17,999,691 | 3,850,882 | 5.08x | hash-based; SHA-256 via the sha2 crate routes cleanly |
+  | ML-DSA-44 | 1,788,262 | 1,017,575 | 1.76x | SHAKE accelerates; the lattice NTT does not |
+  | Falcon-512 | 1,055,318 | not reachable | none | vendors its own SHAKE, so no patch reaches it |
+
+  All accelerated runs assert the precompile actually fired at runtime (129
+  Keccak calls for ML-DSA, 4,148 SHA-256 calls for SLH-DSA, not zero) rather
+  than assuming the patch routed. Two structural findings fall out:
+  - The NTT is the wall. ML-DSA's hashing speeds up but its lattice math has no
+    accelerator on any general-purpose prover, so that is the remaining
+    bottleneck, and it is a research problem, not a patch.
+  - Acceleration is not uniform across provers or schemes. Only SP1's Keccak
+    and SHA-256 accelerators reach the FIPS crates out of the box; RISC Zero's
+    Keccak accelerator lives in a different crate (tiny-keccak) that fips204
+    does not use. And Falcon is blocked by an implementation choice (its
+    reference crate ships its own hashing), not by the math.
 - Per-signature cycle cost is flat across batch sizes 1 to 16 for every scheme
   (for example ML-DSA-44 stays within 0.1 percent of 4.03M cycles per
   signature). Only proof size amortizes. This confirms prior work on our own

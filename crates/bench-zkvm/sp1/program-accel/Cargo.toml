@@ -11,15 +11,23 @@ edition = "2021"
 name = "mldsa44_accel_verify"
 path = "../program/src/bin/mldsa44_verify.rs"
 
+[[bin]]
+name = "slhdsa128s_accel_verify"
+path = "../program/src/bin/slhdsa128s_verify.rs"
+
 [dependencies]
 sp1-zkvm = "6.0"
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 fips204 = { version = "0.4.6", default-features = false, features = ["ml-dsa-44"] }
+fips205 = { version = "0.4.1", default-features = false, features = ["slh_dsa_sha2_128s"] }
 
 [patch.crates-io]
 # SP1's accelerated sha3, routing Keccak-f[1600] to the KECCAK_PERMUTE
-# precompile. fips204 depends on sha3 ^0.10.2, and this fork is 0.10.8.
+# precompile. fips204 (ML-DSA) depends on sha3 ^0.10.2; this fork is 0.10.8.
 sha3 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", tag = "patch-sha3-0.10.8-sp1-6.2.0" }
+# SP1's accelerated sha2, routing SHA-256 to the SHA_EXTEND / SHA_COMPRESS
+# precompiles. fips205 (SLH-DSA) depends on sha2 ^0.10.8; this fork is 0.10.9.
+sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", tag = "patch-sha2-0.10.9-sp1-6.2.0" }
 
 [profile.release]
 opt-level = 3

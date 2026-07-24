@@ -548,14 +548,41 @@ function InCircuit() {
               </div>
             ))}
           </div>
-          <p className="mt-4 max-w-3xl text-xs leading-relaxed text-[var(--color-muted)]">
-            The post-quantum result is the one nobody had published: routing
-            ML-DSA-44's SHAKE-256 hashing into the Keccak accelerator that SP1
-            already ships. Note the catch it exposes: only the hashing sped up.
-            The lattice math (NTT) has no accelerator on any general-purpose
-            prover, so it is now the remaining bottleneck, and the next real
-            prize.
-          </p>
+          <div className="mt-4 max-w-3xl space-y-2 text-xs leading-relaxed text-[var(--color-muted)]">
+            <p>
+              The post-quantum results are the ones nobody had published, and
+              they form a clean pattern. How much a signature accelerates
+              depends on how much of its work is hashing versus lattice math,
+              and on whether its implementation routes hashing through a
+              patchable crate:
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>
+                <span className="text-[var(--color-fg)]">
+                  SLH-DSA-128s accelerates most (about 5x)
+                </span>
+                : it is hash-based, so almost all of it is SHA-256, which routes
+                straight to the accelerator.
+              </li>
+              <li>
+                <span className="text-[var(--color-fg)]">
+                  ML-DSA-44 accelerates partly (1.76x)
+                </span>
+                : the SHAKE hashing speeds up, but the lattice math (NTT) has no
+                accelerator on any general-purpose prover and is now the
+                remaining bottleneck.
+              </li>
+              <li>
+                <span className="text-[var(--color-fg)]">
+                  Falcon-512 does not accelerate at all
+                </span>
+                : its reference Rust implementation ships its own copy of the
+                hashing rather than using the standard crate, so no accelerator
+                can reach it without forking the library. That is an
+                implementation choice, not a limit of the math.
+              </li>
+            </ul>
+          </div>
         </Panel>
       )}
 
