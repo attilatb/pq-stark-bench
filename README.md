@@ -103,6 +103,16 @@ measured, none a discovery:
   either lattice scheme, roughly 5x ML-DSA-44 and 20x accelerated Ed25519,
   because its verification is dominated by a large number of SHA-256
   invocations. That is the honest cost of the conservative hash-based option.
+- Routing ML-DSA-44's SHAKE-256 hashing into the Keccak accelerator that SP1
+  already ships makes verification 1.76x cheaper (1,788,262 to 1,017,575
+  cycles), with the accelerator's use asserted at runtime (129 Keccak
+  precompile calls, not zero). This is the first published measurement of the
+  Keccak-precompile effect for a FIPS post-quantum signature, and it exposes a
+  concrete gap: only SP1's Keccak accelerator reaches the FIPS crates out of
+  the box (RISC Zero's lives in a different crate, tiny-keccak, that fips204
+  does not use), and only the hashing accelerates. The lattice NTT still runs
+  as plain RISC-V on every general-purpose prover, so it is the remaining
+  bottleneck.
 - Per-signature cycle cost is flat across batch sizes 1 to 16 for every scheme
   (for example ML-DSA-44 stays within 0.1 percent of 4.03M cycles per
   signature). Only proof size amortizes. This confirms prior work on our own

@@ -17,6 +17,7 @@ import {
   SCHEME_SPECS,
   allZkvmWorkloads,
   batchSeries,
+  precompileGains,
   formatBytes,
   formatNs,
   hasNativeData,
@@ -501,12 +502,63 @@ function InCircuit() {
   const amortColor = (scheme: string): string =>
     AMORT_PALETTE[amortSchemes.indexOf(scheme) % AMORT_PALETTE.length];
 
+  const gains = precompileGains();
+
   return (
     <Section
       id="in-circuit"
       title="In-circuit results"
       lead="What it costs to verify a signature inside the proof. Cycle counts are deterministic and machine independent. Prover wall-clock, peak memory and proof size are tagged with the machine and never mixed across hardware."
     >
+      {gains.length > 0 && (
+        <Panel accent className="mb-6">
+          <h3 className="text-sm font-semibold">
+            Measured: what a precompile is worth
+          </h3>
+          <p className="mt-2 max-w-3xl text-xs leading-relaxed text-[var(--color-muted)]">
+            The provers ship accelerators for some operations and not others.
+            Turning one on is a real, measured saving. Each row below is a
+            stock build versus the same verification with an accelerator routed
+            in, on the same prover, with the accelerator's use asserted at
+            runtime (not assumed).
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {gains.map((g) => (
+              <div
+                key={`${g.prover}-${g.scheme}`}
+                className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4"
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-semibold">{g.scheme}</span>
+                  <span className="text-lg font-bold tabular-nums text-[var(--color-accent)]">
+                    {g.speedup.toFixed(2)}x
+                  </span>
+                </div>
+                <div className="mt-1 text-[11px] text-[var(--color-muted)]">
+                  {g.prover} ({g.isa}), {g.precompile} precompile
+                  {g.assertPassed ? " - engagement verified" : ""}
+                </div>
+                <div className="mt-2 text-xs tabular-nums text-[var(--color-muted)]">
+                  {g.stockCycles.toLocaleString()} to{" "}
+                  <span className="text-[var(--color-fg)]">
+                    {g.accelCycles.toLocaleString()}
+                  </span>{" "}
+                  cycles
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 max-w-3xl text-xs leading-relaxed text-[var(--color-muted)]">
+            The post-quantum result is the one nobody had published: routing
+            ML-DSA-44's SHAKE-256 hashing into the Keccak accelerator that SP1
+            already ships. Note the catch it exposes: only the hashing sped up.
+            The lattice math (NTT) has no accelerator on any general-purpose
+            prover, so it is now the remaining bottleneck, and the next real
+            prize.
+          </p>
+        </Panel>
+      )}
+
       {cycleCharts.length > 0 && (
         <>
           <p className="mb-4 max-w-3xl text-xs leading-relaxed text-[var(--color-muted)]">

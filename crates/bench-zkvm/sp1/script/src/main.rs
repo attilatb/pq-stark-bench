@@ -33,6 +33,7 @@ fn elf_for(scheme: &str) -> Elf {
         "ed25519" => include_elf!("ed25519_verify"),
         "falcon512" => include_elf!("falcon512_verify"),
         "mldsa44" => include_elf!("mldsa44_verify"),
+        "mldsa44accel" => include_elf!("mldsa44_accel_verify"),
         "slhdsa128s" => include_elf!("slhdsa128s_verify"),
         other => panic!("unknown scheme: {other}"),
     }
@@ -61,6 +62,11 @@ struct SchemeDef {
     crate_name: &'static str,
     crate_version: &'static str,
     hash_primitive: &'static str,
+    /// Precompiles this build is expected to use. Empty for stock builds.
+    precompiles: &'static [&'static str],
+    /// True when this build must fire the Keccak precompile at least once, so
+    /// the host can assert the accelerator actually engaged rather than assume.
+    expect_keccak: bool,
     caveats: &'static [&'static str],
 }
 
@@ -73,6 +79,8 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_name: "ed25519-dalek",
             crate_version: "2.1",
             hash_primitive: "SHA-512",
+            precompiles: &[],
+            expect_keccak: false,
             caveats: &["stock ed25519-dalek: no curve25519 precompile, the honest worst case"],
         },
         "falcon512" => SchemeDef {
@@ -82,6 +90,8 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_name: "fn-dsa-vrfy",
             crate_version: "0.4.0",
             hash_primitive: "SHAKE-256",
+            precompiles: &[],
+            expect_keccak: false,
             caveats: &[
                 "verification is integer-only; signing is done on the host",
                 "no lattice or NTT precompile on this prover",
@@ -94,9 +104,25 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_name: "fips204",
             crate_version: "0.4.6",
             hash_primitive: "SHAKE-256",
+            precompiles: &[],
+            expect_keccak: false,
             caveats: &[
                 "stock: no SHAKE precompile reaches fips204, so SHAKE runs as plain RISC-V",
                 "no lattice or NTT precompile on this prover",
+            ],
+        },
+        "mldsa44accel" => SchemeDef {
+            name: "ml-dsa-44-accel",
+            family: Family::Lattice,
+            spec: "NIST FIPS 204",
+            crate_name: "fips204 + sp1-patches sha3",
+            crate_version: "0.4.6 / patch-sha3-0.10.8-sp1-6.2.0",
+            hash_primitive: "SHAKE-256",
+            precompiles: &["keccak"],
+            expect_keccak: true,
+            caveats: &[
+                "accelerated: fips204 SHAKE-256 routed to SP1's KECCAK_PERMUTE precompile",
+                "only the hashing is accelerated; the lattice NTT still runs as plain RISC-V",
             ],
         },
         "slhdsa128s" => SchemeDef {
@@ -106,12 +132,14 @@ fn scheme_def(scheme: &str) -> SchemeDef {
             crate_name: "fips205",
             crate_version: "0.4.1",
             hash_primitive: "SHA-256",
+            precompiles: &[],
+            expect_keccak: false,
             caveats: &[
                 "stock: no SHA-256 precompile is routed to fips205, so it runs as plain RISC-V",
                 "hash-based: verification is dominated by SHA-256",
             ],
         },
-        other => panic!("unknown scheme: {other}. Use ed25519 | falcon512 | mldsa44 | slhdsa128s"),
+        other => panic!("unknown scheme: {other}. Use ed25519 | falcon512 | mldsa44 | mldsa44accel | slhdsa128s"),
     }
 }
 
@@ -119,7 +147,7 @@ fn build_batch(scheme: &str, n: u32) -> GuestBatch {
     match scheme {
         "ed25519" => build_ed25519(n),
         "falcon512" => build_falcon512(n),
-        "mldsa44" => build_mldsa44(n),
+        "mldsa44" | "mldsa44accel" => build_mldsa44(n),
         "slhdsa128s" => build_slhdsa128s(n),
         other => panic!("unknown scheme: {other}"),
     }
@@ -262,6 +290,20 @@ fn main() {
     let cycles = report.total_instruction_count();
     eprintln!("  instruction count (cycles): {cycles}");
 
+    // Assert the Keccak precompile actually fired for accelerated builds, do
+    // not assume it. A patched sha3 that silently failed to route would leave
+    // this count at zero and quietly inflate the number.
+    let keccak_calls = report.syscall_counts[sp1_core_executor::SyscallCode::KECCAK_PERMUTE];
+    eprintln!("  KECCAK_PERMUTE precompile calls: {keccak_calls}");
+    if def.expect_keccak {
+        assert!(
+            keccak_calls > 0,
+            "{} declared the Keccak precompile but fired it 0 times: the patch did not route",
+            def.name
+        );
+    }
+    let precompile_assert_passed = def.expect_keccak && keccak_calls > 0;
+
     // Read the committed values back in the order the guest committed them.
     let mut pv = public_values;
     let n_committed = pv.read::<u32>();
@@ -324,8 +366,8 @@ fn main() {
                     .into(),
             },
             segment_limit_po2: None,
-            precompiles_used: vec![],
-            precompile_assert_passed: false,
+            precompiles_used: def.precompiles.iter().map(|p| p.to_string()).collect(),
+            precompile_assert_passed,
         },
         batch: Batch {
             n: batch_size,

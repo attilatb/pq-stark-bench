@@ -10,6 +10,8 @@ tx-format = { path = "../../../tx-format" }
 pqb-core = { path = "../../../pqb-core" }
 # The blocking feature exposes the synchronous ProverClient used here.
 sp1-sdk = { version = "6.0", features = ["blocking"] }
+# For SyscallCode, to assert the Keccak precompile actually fired.
+sp1-core-executor = "6.0"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 fn-dsa = "0.4.0"
 fips204 = "0.4.6"

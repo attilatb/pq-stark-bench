@@ -136,6 +136,62 @@ export function allZkvmWorkloads(): Array<{
     .flatMap((run) => run.workloads.map((workload) => ({ run, workload })));
 }
 
+export interface PrecompileGain {
+  prover: string;
+  isa: string;
+  scheme: string;
+  precompile: string;
+  stockCycles: number;
+  accelCycles: number;
+  speedup: number;
+  assertPassed: boolean;
+}
+
+/**
+ * Matched stock-vs-accelerated pairs at N=1: a scheme named "X" and its
+ * accelerated sibling "X-accel" on the same prover. This is the measured value
+ * of turning a precompile on, which is the whole product thesis.
+ */
+export function precompileGains(): PrecompileGain[] {
+  const rows = allZkvmWorkloads().filter(
+    (r) => r.workload.batch.n === 1 && r.workload.cost.cycles !== null
+  );
+  const byKey = new Map<string, number>();
+  const meta = new Map<string, { isa: string; precompile: string; assertPassed: boolean }>();
+  for (const { workload: w } of rows) {
+    const key = `${w.prover.name}::${w.scheme.name}`;
+    if (!byKey.has(key)) byKey.set(key, w.cost.cycles as number);
+    if (w.prover.precompiles_used.length > 0) {
+      meta.set(key, {
+        isa: w.prover.isa,
+        precompile: w.prover.precompiles_used.join(", "),
+        assertPassed: w.prover.precompile_assert_passed,
+      });
+    }
+  }
+
+  const gains: PrecompileGain[] = [];
+  for (const [key, accelCycles] of byKey) {
+    if (!key.includes("-accel")) continue;
+    const [prover, accelScheme] = key.split("::");
+    const stockScheme = accelScheme.replace(/-accel$/, "");
+    const stockCycles = byKey.get(`${prover}::${stockScheme}`);
+    const m = meta.get(key);
+    if (stockCycles === undefined || !m) continue;
+    gains.push({
+      prover,
+      isa: m.isa,
+      scheme: stockScheme,
+      precompile: m.precompile,
+      stockCycles,
+      accelCycles,
+      speedup: Math.round((stockCycles / accelCycles) * 100) / 100,
+      assertPassed: m.assertPassed,
+    });
+  }
+  return gains.sort((a, b) => b.speedup - a.speedup);
+}
+
 export interface BatchPoint {
   n: number;
   cycles: number;
